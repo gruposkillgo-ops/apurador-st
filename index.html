@@ -394,7 +394,9 @@ let notes=[];     // parsed NF-e
 let hist={};      // id -> guide record
 let db=null, dbReady=false, canEditRules=true;
 const FALLBACK_RULES=[ // usadas quando o banco compartilhado não responde
-  {id:"mt-84339090-0104501",uf:"MT",ncm:"84339090",cest:"0104501",descricao:"Partes de máquinas agrícolas (colheitadeira/plataforma)",mva:65.29,aliqInterna:17,fcp:0,reducao:67.05,ajustar:false,validada:true,fonte:"Portaria SEFAZ-MT 195/2019, art. 2º-B, I (autopeças, não optante): 65,29% | Anexo Único, Tabela I, item 45.1 (CEST 01.045.01, NCM 8433.90.90) | art. 3º, p.ú. (sem MVA ajustada) | RICMS/MT Anexo V, art. 25, II, b (base 32,95%)"}
+  {id:"mt-84339090-0104501",uf:"MT",ncm:"84339090",cest:"0104501",descricao:"Partes de máquinas agrícolas (colheitadeira/plataforma)",mva:65.29,aliqInterna:17,fcp:0,reducao:67.05,ajustar:false,validada:true,fonte:"Portaria SEFAZ-MT 195/2019, art. 2º-B, I (autopeças, não optante): 65,29% | Anexo Único, Tabela I, item 45.1 (CEST 01.045.01, NCM 8433.90.90) | art. 3º, p.ú. (sem MVA ajustada) | RICMS/MT Anexo V, art. 25, II, b (base 32,95%)"},
+  {"id": "mt-7318-1005800", "uf": "MT", "ncm": "7318", "cest": "1005800", "descricao": "Parafusos, porcas, arruelas e similares de ferro/aço", "mva": 74.75, "aliqInterna": 17, "fcp": 0, "reducao": 0, "ajustar": false, "semST": false, "validada": true, "fonte": "Portaria SEFAZ-MT 195/2019, Anexo Único, VII - Materiais de construção e congêneres, item 58.0 — CEST 10.058.00, NCM 7318: parafusos, porcas, arruelas (anilhas) e artigos semelhantes de ferro ou aço (redação da Port. 161/2022, cf. Conv. ICMS 66/2022, sem exceção por destinação) | Portaria 195/2019, art. 2º-B, X (materiais de construção, contribuinte não optante pelo crédito outorgado): 74,75% | MVA aplicada sem ajuste — art. 3º, parágrafo único | Alíquota interna MT: 17% | Sem redução de BC: item não integra o Conv. ICMS 52/91 | NF sem CEST: enquadramento pelo NCM e pela descrição do produto"},
+  {"id": "mt-96035000-semst", "uf": "MT", "ncm": "96035000", "cest": "", "descricao": "Escovas que são partes de máquinas (sem ST)", "mva": 0, "aliqInterna": 0, "fcp": 0, "reducao": 0, "ajustar": false, "semST": true, "validada": true, "fonte": "Sem ST no MT: o NCM 9603.50.00 (outras escovas que constituam partes de máquinas, aparelhos ou veículos) não consta no Anexo Único da Portaria SEFAZ-MT 195/2019 (consolidada). Na portaria, a posição 9603 só aparece nos itens 20.057.00 a 20.059.00 (perfumaria e higiene pessoal — NCM 9603.2 e 9603.30.00) e 28.027.00 a 28.028.01 (vendas porta a porta — NCM 9603.29.00 e 9603.30.00), que não alcançam o NCM 9603.50.00. Conferido em 07/10/2026."}
 ];
 
 /* ---------- persistence ---------- */
@@ -463,7 +465,7 @@ function interRate(it,ufO,ufD){
   return (SUL_SE.includes(ufO)&&!SUL_SE.includes(ufD))?7:12;
 }
 function findRule(it,uf){
-  const cand=rules.filter(r=>(r.uf||"").toUpperCase()===uf&&num(r.mva)>0&&num(r.aliqInterna)>0); // regra sem MVA/alíquota = rascunho, não substitui a base legal
+  const cand=rules.filter(r=>(r.uf||"").toUpperCase()===uf&&(r.semST?!!r.validada:(num(r.mva)>0&&num(r.aliqInterna)>0))); // regra sem MVA/alíquota = rascunho, não substitui a base legal
   const ncm=onlyDigits(it.ncm), cest=onlyDigits(it.cest);
   let best=null,score=-1;
   for(const r of cand){
@@ -532,6 +534,7 @@ function calcItem(n,it){
   const retida=it.vICMSST>0, podeComplementar=retida&&ufD===cfg.uf&&sentido(n)==="entrada";
   if(retida&&!podeComplementar){out.status="retida";return out}
   let legal=null;
+  if(rule&&rule.semST){ out.status="fora"; out.decisao=rule; out.legal={cls:"fora",fund:[String(rule.fonte||"Produto não sujeito à ST no MT — decisão registrada.")],conferir:[]}; return out }
   if(!rule){ legal=findLegal(it,ufD);
     if(legal&&legal.cls!=="fora"){ rule={id:"legal",uf:"MT",ncm:it.ncm,cest:it.cest,descricao:"Base legal · "+legal.seg.split(" - ")[1],mva:legal.mva,aliqInterna:legal.aliq,fcp:0,reducao:legal.red,ajustar:false,validada:true,fonte:legal.fund.join(" | ")}; out.rule=rule; out.legal=legal; }
     else if(legal){ out.status="fora"; out.legal=legal; return out }
@@ -601,10 +604,10 @@ function renderPend(calc){
   const cfA={};calc.forEach(({n,rows})=>rows.filter(r=>r.cfopAlert).forEach(r=>{(cfA[n.nNF]=cfA[n.nNF]||{n,r,c:new Set()}).c.add(r.it.cfop)}));
   Object.values(cfA).forEach(({n,r,c})=>P.push({lvl:"warn",t:`NF ${esc(n.nNF)}: CFOP ${[...c].join(", ")} fora de venda`,d:esc(r.cfopAlert)+" "+esc((n.natOp||"").slice(0,60)),a:""}));
   const conf={};calc.forEach(({n,rows})=>rows.filter(r=>r.legal&&r.legal.conferir.length).forEach(r=>{const k=r.it.ncm+"|"+r.it.cest;(conf[k]=conf[k]||{r,notas:new Set()}).notas.add(n.nNF)}));
-  Object.values(conf).forEach(({r,notas})=>P.push({lvl:"warn",t:`${r.status==="fora"?"Sem ST no MT?":"Conferir enquadramento"}: NCM <span class="mono">${esc(r.it.ncm)}</span> CEST <span class="mono">${esc(r.it.cest||"—")}</span>`,d:`${esc(r.it.xProd.slice(0,60))} · NF ${[...notas].join(", ")} — ${r.legal.conferir.map(esc).join(" ")}`,a:`<button data-analyze="${PEND_ITEMS.push({it:r.it,ufO:r.ufO,ufD:r.ufD})-1}">Analisar NCM</button>`}));
+  Object.values(conf).forEach(({r,notas})=>P.push({lvl:"warn",t:`${r.status==="fora"?"Sem ST no MT?":"Conferir enquadramento"}: NCM <span class="mono">${esc(r.it.ncm)}</span> CEST <span class="mono">${esc(r.it.cest||"—")}</span>`,d:`${esc(r.it.xProd.slice(0,60))} · NF ${[...notas].join(", ")} — ${r.legal.conferir.map(esc).join(" ")}`,a:(()=>{const i=PEND_ITEMS.push({it:r.it,ufO:r.ufO,ufD:r.ufD,legal:r.legal,status:r.status})-1; return `<div class="row">${canEditRules?(r.status==="fora"?`<button class="primary" data-semst="${i}">Confirmar: sem ST</button>`:`<button class="primary" data-okenq="${i}">Confirmar enquadramento</button>`):""}<button data-analyze="${i}">Analisar NCM</button></div>`})()}));
   if(!BASE)P.push({lvl:"bad",t:"Base legal do MT não carregou",d:esc(BASE_ERR||"carregando…")+" — itens sem regra cadastrada não serão calculados.",a:""});
-  rules.filter(r=>num(r.mva)<=0||num(r.aliqInterna)<=0).forEach(r=>P.push({lvl:"warn",t:`Regra incompleta ${esc(r.uf)} · NCM <span class="mono">${esc(r.ncm)}</span> (rascunho, ignorada no cálculo)`,d:`${esc(r.descricao)} — preencha MVA e alíquota ou exclua. Enquanto isso vale a base legal.`,a:`<button data-go="regras">Abrir regras</button>`}));
-  rules.filter(r=>!r.validada&&num(r.mva)>0).forEach(r=>P.push({lvl:"warn",t:`Validar regra ${esc(r.uf)} · NCM <span class="mono">${esc(r.ncm)}</span>: IVA ${pct(num(r.mva))}, redução ${pct(num(r.reducao))}`,d:`Conferir na legislação da UF. Fonte atual: ${esc(r.fonte||"—")}`,a:canEditRules?`<button data-validate="${esc(r.id)}">Marcar como validada</button>`:""}));
+  rules.filter(r=>!r.semST&&(num(r.mva)<=0||num(r.aliqInterna)<=0)).forEach(r=>P.push({lvl:"warn",t:`Regra incompleta ${esc(r.uf)} · NCM <span class="mono">${esc(r.ncm)}</span> (rascunho, ignorada no cálculo)`,d:`${esc(r.descricao)} — preencha MVA e alíquota ou exclua. Enquanto isso vale a base legal.`,a:`<button data-go="regras">Abrir regras</button>`}));
+  rules.filter(r=>!r.validada&&(r.semST||num(r.mva)>0)).forEach(r=>P.push({lvl:"warn",t:`Validar regra ${esc(r.uf)} · NCM <span class="mono">${esc(r.ncm)}</span>: IVA ${pct(num(r.mva))}, redução ${pct(num(r.reducao))}`,d:`Conferir na legislação da UF. Fonte atual: ${esc(r.fonte||"—")}`,a:canEditRules?`<button data-validate="${esc(r.id)}">Marcar como validada</button>`:""}));
   if(false)P.push({lvl:"warn",t:"DAR campo 23 (Inf. complementares) não configurado",d:"Na guia paga aparece “033/86.520.517-11”. Informe na aba Empresa se for fixo.",a:`<button data-go="config">Abrir Empresa</button>`});
   const recv=buildGuides(calc).filter(g=>!g.receita);
   if(recv.length)P.push({lvl:"bad",t:"Guia sem código de receita",d:"Configure o código na aba Empresa.",a:`<button data-go="config">Abrir Empresa</button>`});
@@ -613,6 +616,8 @@ function renderPend(calc){
 }
 $("#pendList")&&document.addEventListener("click",e=>{
   const nr=e.target.closest("#pendList [data-newrule]"); if(nr){const [uf,ncm,cest,desc]=nr.dataset.newrule.split("|");addRule({uf,ncm,cest,descricao:desc});setTab("regras");return}
+  const ok=e.target.closest("#pendList [data-okenq]"); if(ok){const x=PEND_ITEMS[+ok.dataset.okenq]; if(x&&x.legal&&x.legal.row){const lg=x.legal,ncm=onlyDigits(x.it.ncm); const r={id:"r"+Date.now().toString(36),uf:x.ufD,ncm,cest:lg.row[2],descricao:("Base legal · "+lg.seg.split(" - ")[1]+" · "+x.it.xProd).slice(0,60),mva:lg.mva,aliqInterna:lg.aliq,fcp:0,reducao:lg.red,ajustar:false,semST:false,fonte:(lg.fund.join(" | ")+" | Enquadramento conferido em "+new Date().toLocaleDateString("pt-BR")+(window.__siteUser?" por "+window.__siteUser.email:"")).slice(0,600),validada:true}; rules.push(r);saveRule(r);renderAll();toast("Enquadramento confirmado — NCM "+ncmFmt(ncm)+" vira regra validada")} return}
+  const ns=e.target.closest("#pendList [data-semst]"); if(ns){const x=PEND_ITEMS[+ns.dataset.semst]; if(x){const ncm=onlyDigits(x.it.ncm); const r={id:"r"+Date.now().toString(36),uf:x.ufD,ncm,cest:"",descricao:("Sem ST · "+x.it.xProd).slice(0,60),mva:0,aliqInterna:0,fcp:0,reducao:0,ajustar:false,semST:true,fonte:`Sem ST no MT: NCM ${ncmFmt(ncm)} não consta no Anexo Único da Portaria SEFAZ-MT 195/2019 (consolidada), nem por NCM nem por CEST — conferido em ${new Date().toLocaleDateString("pt-BR")}${window.__siteUser?" por "+window.__siteUser.email:""}.`,validada:true}; rules.push(r);saveRule(r);renderAll();toast("Registrado: NCM "+ncmFmt(ncm)+" sem ST no MT")} return}
   const v=e.target.closest("[data-validate]"); if(v){const r=rules.find(x=>x.id===v.dataset.validate);if(r){r.validada=true;saveRule(r);renderAll();toast("Regra marcada como validada")}}
 });
 function renderNotes(calc){
@@ -655,7 +660,7 @@ function renderCalc(calc){
     if(!vis.length)continue;
     h+=`<tr class="sub"><td colspan="12">NF-e ${esc(n.nNF)} · ${esc(n.emit.uf)} → ${esc(n.dest.uf)} · ${esc(n.emit.nome)}</td></tr>`;
     for(const r of vis){
-      const it=r.it, st={ok:'<span class="pill ok">regra cadastrada</span>',legal:`<span class="pill acc">base legal</span>${r.legal&&r.legal.conferir.length?' <span class="pill warn">conferir</span>':''}`,fora:'<span class="pill neu">sem ST no MT</span>',complemento:`<span class="pill warn">complemento</span><div class="faint" style="font-size:11px">ST retida R$ ${fmt(r.stRetida)} (${it.pMVAST?"MVA "+pct(it.pMVAST):"MVA não informada"})</div>`,semregra:`<span class="pill warn">sem regra ${esc(r.ufD)}</span>`,retida:'<span class="pill neu">ST retida</span>'}[r.status];
+      const it=r.it, st={ok:'<span class="pill ok">regra cadastrada</span>',legal:`<span class="pill acc">base legal</span>${r.legal&&r.legal.conferir.length?' <span class="pill warn">conferir</span>':''}`,fora:r.decisao?'<span class="pill neu">sem ST no MT</span> <span class="pill ok">confirmado</span>':'<span class="pill neu">sem ST no MT</span>',complemento:`<span class="pill warn">complemento</span><div class="faint" style="font-size:11px">ST retida R$ ${fmt(r.stRetida)} (${it.pMVAST?"MVA "+pct(it.pMVAST):"MVA não informada"})</div>`,semregra:`<span class="pill warn">sem regra ${esc(r.ufD)}</span>`,retida:'<span class="pill neu">ST retida</span>'}[r.status];
       const d=isCalc(r);
       h+=`<tr><td class="desc"><span class="mono faint">${esc(it.nItem)}</span> ${esc(it.xProd)}<div class="faint" style="font-size:12px">CFOP ${esc(it.cfop)} · CST ${esc(it.orig)}${esc(it.cst)}${r.rule&&!r.legal?` · regra: ${esc(r.rule.descricao)}`:''}</div>${r.legal?`<details style="margin-top:4px"><summary style="font-size:12px">fundamentação</summary><ul class="steps" style="font-size:12px">${r.legal.fund.map(f=>`<li>${esc(f)}</li>`).join("")}${r.legal.conferir.map(f=>`<li style="color:var(--warn)">${esc(f)}</li>`).join("")}</ul></details>`:''}</td>
       <td class="mono">${esc(it.ncm)}<div class="faint">${esc(it.cest)||"—"}</div></td><td>${st}${r.status==="semregra"?`<div><button class="ghost" style="padding:2px 0;font-size:12px" data-newrule="${esc(r.ufD)}|${esc(it.ncm)}|${esc(it.cest)}|${esc(it.xProd.slice(0,40))}">+ criar regra</button> · <button class="ghost" style="padding:2px 0;font-size:12px" data-analyzeit="${esc(n.id)}|${esc(it.nItem)}">analisar NCM</button></div>`:''}</td>
@@ -855,14 +860,14 @@ function applyGate(){
   $$("#rulesTbl [data-del]").forEach(b=>b.hidden=!canEditRules);
 }
 /* rules */
-const RCOLS=[["uf","UF dest.",60],["ncm","NCM (prefixo)",110],["cest","CEST",100],["descricao","Descrição",200],["mva","MVA %",70],["aliqInterna","Alíq. int. %",80],["fcp","FCP %",60],["reducao","Red. BC %",70],["ajustar","Ajusta MVA",70],["fonte","Base legal",160],["validada","Validada",70]];
+const RCOLS=[["uf","UF dest.",60],["ncm","NCM (prefixo)",110],["cest","CEST",100],["descricao","Descrição",200],["mva","MVA %",70],["aliqInterna","Alíq. int. %",80],["fcp","FCP %",60],["reducao","Red. BC %",70],["ajustar","Ajusta MVA",70],["semST","Sem ST",60],["fonte","Base legal",160],["validada","Validada",70]];
 function renderRules(){
   const t=$("#rulesTbl");
   if(!rules.length){t.innerHTML=`<tr><td class="empty">Nenhuma regra. Clique em “Nova regra”.</td></tr>`;return}
   if(t.contains(document.activeElement)&&document.activeElement.tagName==="INPUT")return; // não re-renderiza durante edição
   const sorted=[...rules].sort((a,b)=>(a.uf+a.ncm).localeCompare(b.uf+b.ncm));
   t.innerHTML=`<thead><tr>${RCOLS.map(c=>`<th style="min-width:${c[2]}px">${c[1]}</th>`).join("")}<th></th></tr></thead><tbody>`+
-  sorted.map(r=>`<tr data-id="${esc(r.id)}">${RCOLS.map(([k])=>(k==="ajustar"||k==="validada")?`<td style="text-align:center"><input type="checkbox" id="r-${esc(r.id)}-${k}" data-k="${k}" ${r[k]?"checked":""} aria-label="Ajustar MVA"></td>`:`<td><input class="cell" id="r-${esc(r.id)}-${k}" data-k="${k}" value="${esc(r[k]??"")}" aria-label="${k}"></td>`).join("")}<td><button class="ghost danger" data-del="${esc(r.id)}" aria-label="Excluir regra">excluir</button></td></tr>`).join("")+"</tbody>";
+  sorted.map(r=>`<tr data-id="${esc(r.id)}">${RCOLS.map(([k])=>(k==="ajustar"||k==="validada"||k==="semST")?`<td style="text-align:center"><input type="checkbox" id="r-${esc(r.id)}-${k}" data-k="${k}" ${r[k]?"checked":""} aria-label="Ajustar MVA"></td>`:`<td><input class="cell" id="r-${esc(r.id)}-${k}" data-k="${k}" value="${esc(r[k]??"")}" aria-label="${k}"></td>`).join("")}<td><button class="ghost danger" data-del="${esc(r.id)}" aria-label="Excluir regra">excluir</button></td></tr>`).join("")+"</tbody>";
 }
 const NUMK=["mva","aliqInterna","fcp","reducao"];
 $("#rulesTbl").addEventListener("change",async e=>{
@@ -943,6 +948,7 @@ async function memoriaPDF(noteId){
   y+=2;
   // fundamentação
   const fundSet=[]; calcRows.forEach(r=>{const f=r.legal?r.legal.fund:String(r.rule.fonte||"").split(" | ").filter(Boolean); f.forEach(x=>{if(!fundSet.includes(x))fundSet.push(x)})});
+  rows.filter(r=>r.status==="fora"&&r.legal).forEach(r=>{const t=`Item ${r.it.nItem} (NCM ${ncmFmt(onlyDigits(r.it.ncm))}) sem ST: `+(r.decisao?r.legal.fund[0]:r.legal.fund.join(" ")); if(!fundSet.includes(t))fundSet.push(t)});
   if(calcRows.some(r=>r.status==="complemento")) fundSet.push("Complemento: o fornecedor reteve ST com MVA inferior à aplicável ao destinatário não optante — Portaria SEFAZ-MT 195/2019, art. 2º-B, §1º (recolhimento da diferença).");
   const obs=[]; rows.forEach(r=>{(r.legal?r.legal.conferir:[]).forEach(x=>{if(!obs.includes(x))obs.push(x)}); if(r.cfopAlert&&!obs.includes(r.cfopAlert))obs.push(r.cfopAlert)});
   const normas=BASE?BASE.normas.filter(nm=>/art\. 1º, §1º|art\. 2º-B|art\. 3º|Anexo V|Anexo X/.test(nm.ref)):[];
