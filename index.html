@@ -1,0 +1,1063 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Apurador ICMS-ST</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='none' stroke='%230B6A4F' stroke-width='3'/%3E%3Ctext x='16' y='21' font-size='12' font-family='monospace' text-anchor='middle' fill='%230B6A4F'%3EST%3C/text%3E%3C/svg%3E">
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<style>
+body{margin:0}[hidden]{display:none!important}
+#loginGate{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:16px;background:var(--ground,#EEF2F0);font-family:"IBM Plex Sans",system-ui,sans-serif;color:var(--ink,#15201C)}
+#loginGate .card{width:100%;max-width:380px;background:var(--surface,#fff);border:1px solid var(--line,#D2DBD7);border-radius:8px;padding:24px;display:grid;gap:12px}
+#loginGate h1{font-family:"Archivo",Arial,sans-serif;font-size:20px;margin:0}
+#loginGate input{font:inherit;padding:9px 10px;border:1px solid var(--line,#D2DBD7);border-radius:6px;background:var(--surface,#fff);color:inherit}
+#loginGate button{font:inherit;font-weight:600;padding:9px 12px;border-radius:6px;border:1px solid var(--accent,#0B6A4F);background:var(--accent,#0B6A4F);color:var(--accent-ink,#fff);cursor:pointer}
+#loginGate .link{background:none;border:0;color:var(--accent,#0B6A4F);padding:0;font-weight:500;text-align:left}
+#loginGate .msg{font-size:13px;color:var(--ink2,#4A5A54)} #loginGate .err{color:var(--bad,#A8261D)}
+</style>
+<script>
+window.__SITE=true;
+(function(){
+  const C=window.APURADOR_CONFIG||{};
+  let resolveReady,rejectReady; window.__siteReady=new Promise((a,b)=>{resolveReady=a;rejectReady=b});
+  if(!window.supabase||!C.supabaseUrl||/COLE/i.test(C.supabaseUrl+C.supabaseAnonKey)){ window.__SITE_ERR=!window.supabase?"Não foi possível carregar a biblioteca de login (verifique a internet).":"O site ainda não foi configurado: preencha o arquivo config.js com a URL e a chave anon do Supabase."; return; }
+  const sb=window.supabase.createClient(C.supabaseUrl,C.supabaseAnonKey,{auth:{persistSession:true,autoRefreshToken:true}});
+  window.__sb=sb;
+  const E=e=>({code:"unavailable",message:(e&&e.message)||String(e)});
+  const snapDoc=r=>({id:r?r.id:undefined,exists:!!r,data:()=>r?r.data:undefined,metadata:{fromCache:false,hasPendingWrites:false}});
+  async function loadCol(col){ let all=[],from=0; for(;;){ const {data,error}=await sb.from("docs").select("id,data").eq("colecao",col).order("id").range(from,from+999); if(error) throw E(error); all=all.concat(data||[]); if(!data||data.length<1000) break; from+=1000; } return all; }
+  const watchers={}; let channel=null; const timers={};
+  function fire(col){ clearTimeout(timers[col]); timers[col]=setTimeout(()=>{ (watchers[col]||new Set()).forEach(f=>f()) },250); }
+  function ensureChannel(){ if(channel) return; channel=sb.channel("docs-rt").on("postgres_changes",{event:"*",schema:"public",table:"docs"},p=>{ const col=(p.new&&p.new.colecao)||(p.old&&p.old.colecao); if(col) fire(col); else Object.keys(watchers).forEach(fire); }).subscribe(); setInterval(()=>Object.keys(watchers).forEach(fire),60000); }
+  function watch(col,fn){ (watchers[col]=watchers[col]||new Set()).add(fn); ensureChannel(); return ()=>watchers[col].delete(fn); }
+  const db={
+    doc(path){ const [col,id]=path.split("/"); return {
+      async get(){ const {data,error}=await sb.from("docs").select("id,data").eq("colecao",col).eq("id",id).maybeSingle(); if(error) throw E(error); return snapDoc(data); },
+      async set(d){ const {error}=await sb.from("docs").upsert({colecao:col,id,data:d}); if(error) throw {code:"invalid_argument",message:error.message}; },
+      async update(d){ const cur=await this.get(); if(!cur.exists) throw {code:"invalid_argument",message:"documento não existe"}; return this.set({...cur.data(),...d}); },
+      async delete(){ const {error}=await sb.from("docs").delete().eq("colecao",col).eq("id",id); if(error) throw {code:"invalid_argument",message:error.message}; },
+      onSnapshot(next,err){ const load=async()=>{ try{ const {data,error}=await sb.from("docs").select("id,data").eq("colecao",col).eq("id",id).maybeSingle(); if(error) throw E(error); next(snapDoc(data)); }catch(e){ err&&err(e); } }; load(); return watch(col,load); }
+    }},
+    collection(col){ return {
+      onSnapshot(next,err){ const load=async()=>{ try{ const rows=await loadCol(col); const docs=rows.map(snapDoc); next({docs,size:docs.length,empty:!docs.length,docChanges:()=>[],metadata:{fromCache:false,hasPendingWrites:false}}); }catch(e){ err&&err(e); } }; load(); return watch(col,load); }
+    }}
+  };
+  async function afterLogin(session){
+    const {data:m}=await sb.from("membros").select("papel,email,nome").eq("user_id",session.user.id).maybeSingle();
+    if(!m){ showGate("Seu usuário ainda não foi liberado no sistema. Peça ao administrador.",true); await sb.auth.signOut(); return; }
+    window.__siteUser={id:session.user.id,email:session.user.email,papel:m.papel,nome:m.nome};
+    document.getElementById("loginGate").hidden=true; resolveReady(db); window.dispatchEvent(new Event("site-login"));
+  }
+  function showGate(msg,isErr){ const g=document.getElementById("loginGate"); g.hidden=false; const el=document.getElementById("lgMsg"); el.textContent=msg||""; el.className="msg"+(isErr?" err":""); }
+  window.__siteBoot=async function(){
+    const g=document.getElementById("loginGate");
+    document.getElementById("lgForm").addEventListener("submit",async e=>{ e.preventDefault(); const em=document.getElementById("lgEmail").value.trim(), pw=document.getElementById("lgPass").value; showGate("Entrando…"); const {data,error}=await sb.auth.signInWithPassword({email:em,password:pw}); if(error) return showGate(error.message==="Invalid login credentials"?"E-mail ou senha incorretos.":error.message,true); afterLogin(data.session); });
+    document.getElementById("lgForgot").addEventListener("click",async()=>{ const em=document.getElementById("lgEmail").value.trim(); if(!em) return showGate("Digite seu e-mail acima e clique de novo.",true); const {error}=await sb.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname}); showGate(error?error.message:"Enviamos um link para redefinir a senha.",!!error); });
+    sb.auth.onAuthStateChange(async (ev,session)=>{ if(ev==="PASSWORD_RECOVERY"){ const pw=await askNewPassword(); if(pw){ const {error}=await sb.auth.updateUser({password:pw}); showGate(error?error.message:"Senha alterada. Entre com a nova senha.",!!error); await sb.auth.signOut(); } } });
+    const {data}=await sb.auth.getSession(); if(data.session) afterLogin(data.session); else showGate("");
+  };
+  function askNewPassword(){ return new Promise(res=>{ const f=document.getElementById("lgForm"); f.hidden=true; const box=document.getElementById("lgNew"); box.hidden=false; showGate("Defina sua nova senha (mínimo 8 caracteres)."); document.getElementById("lgNewBtn").onclick=()=>{ const v=document.getElementById("lgNewPass").value; if(v.length<8) return showGate("A senha precisa ter pelo menos 8 caracteres.",true); box.hidden=true; f.hidden=false; res(v); }; }); }
+  window.__siteLogout=async()=>{ await sb.auth.signOut(); location.reload(); };
+})();
+</script>
+</head>
+<body>
+<div id="loginGate" hidden>
+  <div class="card">
+    <div style="display:flex;gap:10px;align-items:center"><div style="width:34px;height:34px;border:2px solid var(--accent,#0B6A4F);border-radius:50%;display:grid;place-items:center;font:500 10px monospace;color:var(--accent,#0B6A4F)">ST</div><h1>Apurador ICMS-ST</h1></div>
+    <form id="lgForm" style="display:grid;gap:10px">
+      <label style="display:grid;gap:4px;font-size:13px">E-mail<input id="lgEmail" type="email" autocomplete="username" required></label>
+      <label style="display:grid;gap:4px;font-size:13px">Senha<input id="lgPass" type="password" autocomplete="current-password" required></label>
+      <button type="submit">Entrar</button>
+      <button type="button" class="link" id="lgForgot">Esqueci minha senha</button>
+    </form>
+    <div id="lgNew" hidden style="display:grid;gap:10px"><input id="lgNewPass" type="password" autocomplete="new-password" placeholder="Nova senha"><button type="button" id="lgNewBtn">Salvar nova senha</button></div>
+    <div id="lgMsg" class="msg"></div>
+  </div>
+</div>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+:root{
+  --ground:#EEF2F0; --surface:#FFFFFF; --sunk:#E3E9E6; --ink:#15201C; --ink2:#4A5A54; --ink3:#72827C;
+  --line:#D2DBD7; --accent:#0B6A4F; --accent-ink:#FFFFFF; --accent-soft:#D8EEE6;
+  --warn:#9A6212; --warn-soft:#F8ECD6; --bad:#A8261D; --bad-soft:#F7DEDB; --ok:#1C7A3F; --ok-soft:#DCF0E2;
+  --stamp:#0B6A4F;
+  --r:6px;
+  --f-display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --ground:#0E1412; --surface:#161F1C; --sunk:#1D2825; --ink:#E3ECE8; --ink2:#A9BAB3; --ink3:#7E908A;
+    --line:#2B3834; --accent:#47C49B; --accent-ink:#06140F; --accent-soft:#17362C;
+    --warn:#E5B25D; --warn-soft:#3A2D14; --bad:#F0877E; --bad-soft:#3D1D1A; --ok:#6BD58F; --ok-soft:#17331F; --stamp:#47C49B;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#0E1412; --surface:#161F1C; --sunk:#1D2825; --ink:#E3ECE8; --ink2:#A9BAB3; --ink3:#7E908A;
+  --line:#2B3834; --accent:#47C49B; --accent-ink:#06140F; --accent-soft:#17362C;
+  --warn:#E5B25D; --warn-soft:#3A2D14; --bad:#F0877E; --bad-soft:#3D1D1A; --ok:#6BD58F; --ok-soft:#17331F; --stamp:#47C49B;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.5;padding:0 16px 48px}
+.wrap{max-width:1180px;margin:0 auto}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:22px;font-weight:700}
+h2{font-size:17px;font-weight:600}
+h3{font-size:14px;font-weight:600}
+.mono,.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.num{text-align:right;white-space:nowrap}
+.muted{color:var(--ink2)} .faint{color:var(--ink3)}
+.label{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink3);font-weight:600}
+
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--ground);padding-block:14px 0;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between}
+.brand .mark{display:flex;align-items:center;gap:10px}
+.seal{width:34px;height:34px;border:2px solid var(--stamp);border-radius:50%;display:grid;place-items:center;font-family:var(--f-mono);font-size:10px;font-weight:500;color:var(--stamp);letter-spacing:.02em}
+.company{font-size:12px;color:var(--ink2);text-align:right}
+nav.tabs{display:flex;gap:2px;margin-top:12px;overflow-x:auto;scrollbar-width:none}
+nav.tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:8px 12px 10px;font:inherit;font-weight:500;color:var(--ink2);cursor:pointer;white-space:nowrap}
+nav.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+nav.tabs .count{font-family:var(--f-mono);font-size:11px;background:var(--sunk);border-radius:10px;padding:1px 6px;margin-left:6px;color:var(--ink2)}
+
+main{padding-top:20px;display:grid;gap:18px;grid-template-columns:minmax(0,1fr)}
+main>section,.panel,.guide{min-width:0}
+html,body{overflow-x:hidden}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.panel-h{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 16px;border-bottom:1px solid var(--line)}
+.panel-b{padding:16px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
+button,.btn{font:inherit;font-weight:500;border-radius:var(--r);border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:7px 12px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+button:hover,.btn:hover{border-color:var(--ink3)}
+button.primary,.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button.ghost{border-color:transparent;background:none;color:var(--ink2);padding:4px 8px}
+button.danger{color:var(--bad)}
+button:disabled{opacity:.5;cursor:not-allowed}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+input,select,textarea{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:6px 8px;min-width:0}
+input.cell{width:100%;padding:4px 6px;font-family:var(--f-mono);font-size:13px;border-color:transparent;background:transparent}
+input.cell:hover{border-color:var(--line)} input.cell:focus{border-color:var(--accent);background:var(--surface)}
+.field{display:grid;gap:4px}
+.grid-form{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+
+.drop{border:1.5px dashed var(--ink3);border-radius:var(--r);padding:22px;text-align:center;background:var(--sunk);cursor:pointer}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.summary>div{background:var(--surface);padding:12px 14px}
+.summary .v{font-family:var(--f-mono);font-size:20px;font-variant-numeric:tabular-nums;margin-top:2px}
+.summary .v.accent{color:var(--accent)}
+
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);font-weight:600;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--surface)}
+td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+tr.sub td{background:var(--sunk);font-weight:600}
+td.desc{max-width:260px}
+.pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 7px;border-radius:10px;white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.pill.neu{background:var(--sunk);color:var(--ink2)}
+.pill.acc{background:var(--accent-soft);color:var(--accent)}
+
+.note-card{display:grid;grid-template-columns:1fr auto;gap:6px 16px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.note-card:last-child{border-bottom:0}
+.chave{font-family:var(--f-mono);font-size:12px;color:var(--ink3);word-break:break-all}
+
+.guides{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
+@media (max-width:420px){.guides{grid-template-columns:1fr}}
+.guide{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);display:flex;flex-direction:column}
+.guide-h{padding:14px 16px 10px;display:flex;justify-content:space-between;gap:10px;align-items:flex-start;border-bottom:1px dashed var(--line)}
+.guide-h .amt{font-family:var(--f-mono);font-size:22px;font-variant-numeric:tabular-nums}
+.gf{display:grid;grid-template-columns:132px 1fr auto;gap:4px 10px;align-items:center;padding:10px 16px;font-size:13px}
+.gf .k{color:var(--ink3);font-size:12px}
+.gf .v{font-family:var(--f-mono);word-break:break-all}
+.gf button{padding:2px 7px;font-size:11px}
+.guide-f{margin-top:auto;padding:12px 16px;border-top:1px solid var(--line);display:grid;gap:8px}
+.steps{margin:0;padding-left:18px;color:var(--ink2);display:grid;gap:4px}
+.callout{background:var(--warn-soft);color:var(--warn);border-radius:var(--r);padding:10px 14px;font-size:13px}
+.callout.info{background:var(--accent-soft);color:var(--accent)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--ground);padding:8px 14px;border-radius:var(--r);font-size:13px;z-index:20}
+.empty{padding:28px 16px;text-align:center;color:var(--ink2)}
+details summary{cursor:pointer;color:var(--ink2)}
+.formula{font-family:var(--f-mono);font-size:12.5px;background:var(--sunk);border-radius:4px;padding:10px 12px;line-height:1.7;overflow-x:auto}
+@media (max-width:600px){ .gf{grid-template-columns:110px 1fr auto} .company{text-align:left} }
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+<header class="top">
+  <div class="brand">
+    <div class="mark">
+      <div class="seal" aria-hidden="true">ST</div>
+      <div>
+        <h1>Apurador ICMS-ST</h1>
+        <div class="faint" style="font-size:12px">XML da NF-e → cálculo com base legal → DAR SEFAZ-MT e memória em PDF</div>
+      </div>
+    </div>
+    <div><div class="company" id="companyLine">Empresa não configurada</div><div class="company" id="dbStatus" style="font-size:11px">● conectando…</div></div>
+  </div>
+  <nav class="tabs" role="tablist" id="tabs">
+    <button role="tab" data-tab="notas" aria-selected="true">Notas<span class="count" id="cNotas">0</span></button>
+    <button role="tab" data-tab="calculo" aria-selected="false">Cálculo<span class="count" id="cItens">0</span></button>
+    <button role="tab" data-tab="guias" aria-selected="false">Guias<span class="count" id="cGuias">0</span></button>
+    <button role="tab" data-tab="regras" aria-selected="false">Regras MVA<span class="count" id="cRegras">0</span></button>
+    <button role="tab" data-tab="consulta" aria-selected="false">Consulta NCM</button>
+    <button role="tab" data-tab="base" aria-selected="false">Base legal<span class="count" id="cBase">…</span></button>
+    <button role="tab" data-tab="historico" aria-selected="false">Histórico<span class="count" id="cHist">0</span></button>
+    <button role="tab" data-tab="config" aria-selected="false">Empresa</button>
+  </nav>
+</header>
+
+<main>
+  <!-- NOTAS -->
+  <section data-view="notas" style="display:grid;gap:18px">
+    <div class="panel" id="pendPanel" hidden><div class="panel-h"><h2>Pendências</h2><span class="muted" id="pendCount"></span></div><div id="pendList"></div></div>
+    <div class="panel">
+      <div class="panel-h"><h2>Importar NF-e</h2>
+        <div class="row">
+          <button id="btnExample" class="ghost">Carregar nota de referência (NF 312758)</button>
+          <button id="btnClear" class="ghost danger" hidden>Limpar notas</button>
+        </div>
+      </div>
+      <div class="panel-b" style="display:grid;gap:14px">
+        <label class="drop" id="drop" for="fileIn">
+          <strong>Arraste os XMLs das NF-e aqui</strong><br>
+          <span class="muted">ou clique para escolher — vários arquivos de uma vez (nfeProc ou NFe)</span>
+          <input type="file" id="fileIn" accept=".xml,text/xml" multiple hidden>
+        </label>
+        <div id="importMsg" class="muted" hidden></div>
+      </div>
+      <div id="notesList"></div>
+    </div>
+  </section>
+
+  <!-- CALCULO -->
+  <section data-view="calculo" hidden>
+    <div class="summary" id="sumBox"></div>
+    <div class="panel">
+      <div class="panel-h"><h2>Memória de cálculo por item</h2>
+        <div class="row">
+          <label class="row" style="gap:6px"><input type="checkbox" id="onlyST" checked> só itens com ST</label>
+          <button id="btnXlsx" class="primary">Planilha de antecipação (.xlsx)</button><button id="btnCsv">CSV</button>
+        </div>
+      </div>
+      <div class="tbl-wrap"><table id="calcTbl"></table></div>
+      <div class="panel-b">
+        <details>
+          <summary>Como o cálculo é feito</summary>
+          <div class="formula" style="margin-top:10px">
+            Base operação = vProd + vFrete + vSeg + vOutro − vDesc + vIPI*<br>
+            MVA ajustada = [(1 + MVA) × (1 − alíq. inter) ÷ (1 − alíq. interna)] − 1 &nbsp;(quando a regra pede ajuste e a operação é interestadual)<br>
+            BC ST = Base operação × (1 + MVA aplicada) × (1 − redução BC)<br>
+            ICMS ST = BC ST × alíq. interna − ICMS próprio (destacado no XML ou Base × alíq. inter)<br>
+            FCP ST = BC ST × % FCP<br>
+            <span class="faint">* IPI compõe a base conforme configuração da empresa. Itens que já vêm com vICMSST no XML ficam fora (ST retida pelo fornecedor).</span>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- GUIAS -->
+  <section data-view="guias" hidden>
+    <div class="panel">
+      <div class="panel-h">
+        <div><h2>Guias a emitir</h2><div class="muted" style="font-size:13px">Uma guia por nota e por receita — DAR da SEFAZ da própria UF nas entradas, GNRE nas operações para outra UF. Copie os campos no portal, emita e registre o número/código de barras aqui.</div></div>
+        <div class="row">
+          <a class="btn primary" id="lnkLocal" href="https://www.sefaz.mt.gov.br" target="_blank" rel="noopener">Portal SEFAZ ↗</a><a class="btn" href="https://www.gnre.pe.gov.br" target="_blank" rel="noopener">Portal GNRE ↗</a>
+          <button id="btnJson">Exportar dados (JSON)</button>
+        </div>
+      </div>
+      <div class="panel-b">
+        <ol class="steps">
+          <li>Abra o <b>Portal SEFAZ-MT</b> e escolha a emissão de DAR-1/AUT, receita <b>2817</b> (ICMS ST entrada interestadual).</li>
+          <li>Preencha CNPJ/IE da filial, período, vencimento, valor e a NF-e (campo 32) com os botões <i>copiar</i> de cada cartão.</li>
+          <li>Depois de gerar o DAR, cole o <b>número do campo 23</b> (ou a linha digitável) e clique em <b>Registrar emissão</b>. Baixe a <b>Memória PDF</b> para enviar ao cliente.</li>
+        </ol>
+      </div>
+    </div>
+    <div class="guides" id="guides"></div>
+  </section>
+
+  <!-- REGRAS -->
+  <section data-view="regras" hidden>
+    <div class="panel">
+      <div class="panel-h">
+        <div><h2>Regras de ST por UF / NCM</h2><div class="muted" style="font-size:13px">A regra mais específica vence: CEST exato &gt; prefixo de NCM mais longo. Tabela compartilhada com quem abre esta página.</div></div>
+        <div class="row"><button id="btnAddRule" class="primary">+ Nova regra</button></div>
+      </div>
+      <div class="panel-b" style="padding-bottom:0;display:grid;gap:10px"><div class="callout info" id="gateNote" hidden>Somente leitura: apenas quem tem permissão <b>Pode editar</b> altera regras e dados da empresa.</div><div class="callout" id="rulesWarn">MVAs e alíquotas mudam por protocolo/convênio e decreto estadual. Confira cada regra na legislação da UF de destino antes de recolher.</div></div>
+      <div class="tbl-wrap"><table id="rulesTbl"></table></div>
+    </div>
+  </section>
+
+  <!-- HISTORICO -->
+  <section data-view="consulta" hidden style="display:grid;gap:18px">
+    <div class="panel">
+      <div class="panel-h"><div><h2>Consulta NCM</h2><div class="muted" style="font-size:13px">Procura a melhor regra cadastrada e, se não houver, pede ao Claude uma análise tributária do item.</div></div></div>
+      <div class="panel-b" style="display:grid;gap:14px">
+        <div class="grid-form">
+          <label class="field"><span class="label">NCM</span><input id="qNcm" class="mono" placeholder="84339090"></label>
+          <label class="field"><span class="label">CEST</span><input id="qCest" class="mono" placeholder="0104501"></label>
+          <label class="field"><span class="label">UF origem</span><input id="qUfO" class="mono" placeholder="RS" maxlength="2"></label>
+          <label class="field"><span class="label">UF destino</span><input id="qUfD" class="mono" placeholder="MT" maxlength="2"></label>
+          <label class="field"><span class="label">Alíq. ICMS destacada %</span><input id="qPicms" class="mono" placeholder="7"></label>
+          <label class="field"><span class="label">Redução BC na origem %</span><input id="qRed" class="mono" placeholder="41,428"></label>
+          <label class="field"><span class="label">CFOP</span><input id="qCfop" class="mono" placeholder="6101"></label>
+          <label class="field" style="grid-column:1/-1"><span class="label">Descrição do produto</span><input id="qDesc" placeholder="BARRA CENTRAL DA PLATAFORMA"></label>
+        </div>
+        <div class="row"><button id="btnLocal" class="primary">Buscar regra</button><button id="btnAI" hidden>Analisar com Claude</button><button id="btnAIStop" class="ghost" hidden>Parar</button><span class="muted" id="aiStatus"></span></div>
+      </div>
+    </div>
+    <div class="panel" id="localRes" hidden><div class="panel-h"><h2>Regras compatíveis</h2><span class="muted" id="localHint"></span></div><div id="localList"></div></div>
+    <div class="panel" id="aiRes" hidden><div class="panel-h"><h2>Análise do Claude</h2><span id="aiConf"></span></div><div class="panel-b" id="aiBody"></div></div>
+  </section>
+
+  <section data-view="base" hidden style="display:grid;gap:18px">
+    <div class="panel">
+      <div class="panel-h"><div><h2>Base legal ICMS-ST · Mato Grosso</h2><div class="muted" style="font-size:13px" id="baseMeta">Carregando…</div></div></div>
+      <div class="panel-b" style="display:grid;gap:12px">
+        <div class="row"><input id="baseQ" placeholder="Buscar por NCM, CEST ou descrição (ex.: 8433, 01.045, rolamento)" style="flex:1;min-width:220px"><select id="baseSeg"><option value="">Todos os segmentos</option></select></div>
+        <div class="muted" style="font-size:12px" id="baseCount"></div>
+      </div>
+      <div class="tbl-wrap"><table id="baseTbl"></table></div>
+    </div>
+    <div class="panel"><div class="panel-h"><h2>Normas aplicadas pelo sistema</h2></div><div id="normasList"></div></div>
+  </section>
+
+  <section data-view="historico" hidden>
+    <div class="panel">
+      <div class="panel-h"><h2>Guias registradas</h2><div class="muted" id="histTotal"></div></div>
+      <div class="tbl-wrap"><table id="histTbl"></table></div>
+    </div>
+  </section>
+
+  <!-- CONFIG -->
+  <section data-view="config" hidden>
+    <div class="panel">
+      <div class="panel-h"><h2>Dados da empresa e parâmetros</h2><span class="muted" id="cfgSaved"></span></div>
+      <div class="panel-b" style="display:grid;gap:18px">
+        <div class="grid-form" id="cfgForm"></div>
+        <div class="row"><button id="btnBackup">Exportar backup (JSON)</button><label class="btn" for="backupIn">Importar backup</label><input type="file" id="backupIn" accept=".json,application/json" hidden><span class="muted" style="font-size:12px">Leva notas, guias registradas, regras e dados da empresa para outro computador.</span></div>
+        <div class="callout info">O CNPJ da empresa define o sentido: se ela é a <b>destinatária</b> da nota, é antecipação/ST na entrada; se é a <b>emitente</b>, é ST na saída (você recolhe para a UF de destino).</div>
+      </div>
+    </div>
+  </section>
+</main>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function(){
+"use strict";
+/* ---------- utils ---------- */
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const fmt=n=>(n||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const pct=n=>(n||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})+"%";
+const r2=n=>Math.round((n+Number.EPSILON)*100)/100;
+const num=v=>{if(v==null||v==="")return 0;const s=String(v).trim();const n=s.includes(",")?parseFloat(s.replace(/\./g,"").replace(",",".")):parseFloat(s);return isNaN(n)?0:n};
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const onlyDigits=s=>String(s||"").replace(/\D/g,"");
+const fmtCnpj=s=>{s=onlyDigits(s);return s.length===14?s.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,"$1.$2.$3/$4-$5"):s};
+const todayISO=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,10)};
+const brDate=iso=>iso?iso.slice(0,10).split("-").reverse().join("/"):"";
+let toastT;function toast(m){const t=$("#toast");t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,2200)}
+function copy(text,btn){
+  const done=()=>{toast("Copiado: "+String(text).slice(0,40));};
+  try{navigator.clipboard.writeText(String(text)).then(done,()=>fallback())}catch(e){fallback()}
+  function fallback(){const ta=document.createElement("textarea");ta.value=text;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");done()}catch(e){toast("Selecione e copie manualmente")}ta.remove()}
+}
+
+/* ---------- state ---------- */
+const UFS="AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO".split(" ");
+const SUL_SE=["SP","RJ","MG","PR","SC","RS"];
+const DEFAULT_CFG={cnpj:"21174220000292",razao:"XINGU MAQUINAS AGRICOLAS LTDA",ie:"135831695",uf:"MT",endereco:"AV SUL, 424 QUADRA 13 LOTE 18 - SETOR H",municipio:"QUERÊNCIA",cep:"78643000",fone:"6635291002",ipiNaBase:true,freteNaBase:true,receitaST:"100048",receitaFCP:"100129",receitaLocal:"2817",receitaLocalFCP:"",portalLocal:"https://www.sefaz.mt.gov.br",codMunSefaz:"208000",campo23:"",regimeMVA:"nao_optante",conv5291ok:"84339090",responsavel:"Grupo Skill",filiais:"21174220000101=10006;21174220000292=208000;21174220000373=75000;21174220000454=89001",fcpSeparado:true,tipoDoc:"10",vencRegra:"hoje",diaVenc:9};
+let cfg={...DEFAULT_CFG};
+let rules=[];     // {id,uf,ncm,cest,descricao,mva,aliqInterna,fcp,reducao,ajustar,fonte}
+let notes=[];     // parsed NF-e
+let hist={};      // id -> guide record
+let db=null, dbReady=false, canEditRules=true;
+const FALLBACK_RULES=[ // usadas quando o banco compartilhado não responde
+  {id:"mt-84339090-0104501",uf:"MT",ncm:"84339090",cest:"0104501",descricao:"Partes de máquinas agrícolas (colheitadeira/plataforma)",mva:65.29,aliqInterna:17,fcp:0,reducao:67.05,ajustar:false,validada:true,fonte:"Portaria SEFAZ-MT 195/2019, art. 2º-B, I (autopeças, não optante): 65,29% | Anexo Único, Tabela I, item 45.1 (CEST 01.045.01, NCM 8433.90.90) | art. 3º, p.ú. (sem MVA ajustada) | RICMS/MT Anexo V, art. 25, II, b (base 32,95%)"}
+];
+
+/* ---------- persistence ---------- */
+function lsGet(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}
+function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+notes=lsGet("st_notes",[]);
+cfg={...DEFAULT_CFG,...Object.fromEntries(Object.entries(lsGet("st_cfg",{})).filter(([k,v])=>v!==""))};
+rules=lsGet("st_rules_v3",null)||FALLBACK_RULES.slice();
+
+function setDbStatus(ok){const el=$("#dbStatus");if(!el)return;el.textContent=ok?(window.__SITE?"● conectado · "+((window.__siteUser||{}).email||""):"● banco compartilhado conectado"):(window.__STANDALONE?"● versão offline — dados salvos neste computador":"● modo local (sem banco compartilhado)");el.style.color=ok?"var(--ok)":"var(--warn)";}
+async function initDb(){
+  if(window.__SITE){ try{ db=await window.__siteReady; }catch(e){ db=null; } }
+  else {
+  for(let k=0;k<(window.__STANDALONE?0:50)&&!(window.claude&&window.claude.use);k++) await new Promise(r=>setTimeout(r,200));
+  try{ if(window.claude&&window.claude.use) db=await window.claude.use("db"); }catch(e){db=null}
+  }
+  setDbStatus(!!db);
+  if(!db){ $("#rulesWarn").insertAdjacentHTML("beforeend"," <b>Banco compartilhado indisponível nesta visualização — regras ficam só neste navegador.</b>"); return; }
+  dbReady=true;
+  if(window.__SITE){ canEditRules=!!(window.__siteUser&&window.__siteUser.papel==="admin"); applyGate(); }
+  else { try{const u=await window.claude.use("user");if(u){canEditRules=await u.canEdit();applyGate();}}catch(e){} }
+  db.doc("config/empresa").onSnapshot(s=>{ if(s.exists){cfg={...DEFAULT_CFG,...Object.fromEntries(Object.entries(s.data()).filter(([k,v])=>v!==""))};lsSet("st_cfg",cfg);renderCfg();renderAll();} },()=>{});
+  db.collection("regras").onSnapshot(s=>{ const r=s.docs.map(d=>({id:d.id,...d.data()})); rules=r.length?r:FALLBACK_RULES.slice(); lsSet("st_rules_v3",rules); renderAll(); },e=>{setDbStatus(false)});
+  db.collection("notas").onSnapshot(s=>{ const remote=s.docs.map(d=>d.data().nota).filter(Boolean);
+    const localOnly=notes.filter(n=>!remote.some(r=>r.id===n.id)&&!n._shared);
+    if(localOnly.length&&!notesMigrated){notesMigrated=true;localOnly.forEach(n=>pushNote(n));}
+    notes=[...remote.map(n=>({...n,_shared:true})),...localOnly]; sortNotes(); lsSet("st_notes",notes); renderAll(); },()=>{});
+  db.collection("guias").onSnapshot(s=>{ hist={}; s.docs.forEach(d=>hist[d.id]={id:d.id,...d.data()}); renderAll(); },()=>{});
+}
+
+/* ---------- XML parsing ---------- */
+const q=(el,name)=>{if(!el)return null;const r=el.getElementsByTagNameNS("*",name);return r.length?r[0]:null};
+const tx=(el,name)=>{const n=q(el,name);return n?n.textContent.trim():""};
+function parseNFe(xmlText,fileName){
+  const doc=new DOMParser().parseFromString(xmlText,"application/xml");
+  if(doc.getElementsByTagName("parsererror").length) throw new Error("XML inválido");
+  const inf=q(doc,"infNFe"); if(!inf) throw new Error("não parece uma NF-e (sem infNFe)");
+  const ide=q(inf,"ide"),emit=q(inf,"emit"),dest=q(inf,"dest"),ee=q(emit,"enderEmit"),ed=q(dest,"enderDest"),tot=q(inf,"ICMSTot");
+  const chave=(inf.getAttribute("Id")||"").replace(/^NFe/,"")||tx(doc,"chNFe");
+  const items=[...inf.getElementsByTagNameNS("*","det")].map(det=>{
+    const p=q(det,"prod"),imp=q(det,"imposto"),icms=q(imp,"ICMS"),ipi=q(imp,"IPI");
+    const g=icms?[...icms.children][0]:null;
+    return {
+      nItem:det.getAttribute("nItem"),cProd:tx(p,"cProd"),xProd:tx(p,"xProd"),ncm:tx(p,"NCM"),cest:tx(p,"CEST"),cfop:tx(p,"CFOP"),
+      qCom:num(tx(p,"qCom")),uCom:tx(p,"uCom"),vProd:num(tx(p,"vProd")),vFrete:num(tx(p,"vFrete")),vSeg:num(tx(p,"vSeg")),
+      vDesc:num(tx(p,"vDesc")),vOutro:num(tx(p,"vOutro")),
+      orig:tx(g,"orig"),cst:tx(g,"CST")||tx(g,"CSOSN"),vBC:num(tx(g,"vBC")),pICMS:num(tx(g,"pICMS")),vICMS:num(tx(g,"vICMS")),
+      vICMSST:num(tx(g,"vICMSST")),pMVAST:num(tx(g,"pMVAST")),pRedBCST:num(tx(g,"pRedBCST")),vBCST:num(tx(g,"vBCST")),pRedBC:num(tx(g,"pRedBC")),vIPI:num(tx(ipi,"vIPI"))
+    };
+  });
+  return {
+    id:chave||fileName+Date.now(),chave,fileName,nNF:tx(ide,"nNF"),serie:tx(ide,"serie"),dhEmi:tx(ide,"dhEmi")||tx(ide,"dEmi"),natOp:tx(ide,"natOp"),
+    emit:{cnpj:tx(emit,"CNPJ")||tx(emit,"CPF"),nome:tx(emit,"xNome"),ie:tx(emit,"IE"),uf:tx(ee,"UF"),mun:tx(ee,"xMun"),cMun:tx(ee,"cMun"),
+      end:[tx(ee,"xLgr"),tx(ee,"nro"),tx(ee,"xBairro")].filter(Boolean).join(", "),cep:tx(ee,"CEP"),fone:tx(ee,"fone")},
+    dest:{cnpj:tx(dest,"CNPJ")||tx(dest,"CPF"),nome:tx(dest,"xNome"),ie:tx(dest,"IE"),uf:tx(ed,"UF"),mun:tx(ed,"xMun"),cMun:tx(ed,"cMun"),
+      end:[tx(ed,"xLgr"),tx(ed,"nro"),tx(ed,"xBairro")].filter(Boolean).join(", "),cep:tx(ed,"CEP"),fone:tx(ed,"fone")},
+    vNF:num(tx(tot,"vNF")),items
+  };
+}
+
+/* ---------- calculation ---------- */
+function interRate(it,ufO,ufD){
+  if(ufO===ufD) return null;
+  if(["1","2","3","8"].includes(it.orig)) return 4;
+  if(it.pICMS>0) return it.pICMS;
+  return (SUL_SE.includes(ufO)&&!SUL_SE.includes(ufD))?7:12;
+}
+function findRule(it,uf){
+  const cand=rules.filter(r=>(r.uf||"").toUpperCase()===uf&&num(r.mva)>0&&num(r.aliqInterna)>0); // regra sem MVA/alíquota = rascunho, não substitui a base legal
+  const ncm=onlyDigits(it.ncm), cest=onlyDigits(it.cest);
+  let best=null,score=-1;
+  for(const r of cand){
+    const rc=onlyDigits(r.cest), rn=onlyDigits(r.ncm);
+    let s=-1;
+    if(rc&&cest&&rc===cest) s=100+rn.length;
+    else if(!rc&&rn&&ncm.startsWith(rn)) s=rn.length;
+    else if(rc&&!cest&&rn&&ncm.startsWith(rn)) s=rn.length-0.5;
+    if(s>score){score=s;best=r}
+  }
+  return best;
+}
+function sentido(n){
+  const c=onlyDigits(cfg.cnpj);
+  const root=c.slice(0,8);
+  if(root&&onlyDigits(n.dest.cnpj).slice(0,8)===root) return "entrada";
+  if(root&&onlyDigits(n.emit.cnpj).slice(0,8)===root) return "saida";
+  return "indef";
+}
+/* ---------- base legal (Portaria SEFAZ-MT 195/2019) ---------- */
+let BASE=null, BASE_ERR="";
+async function loadBase(){try{if(window.__BASE_EMBED){BASE=window.__BASE_EMBED}else{const r=await fetch("base-legal-mt.json");if(!r.ok)throw new Error("HTTP "+r.status);BASE=await r.json();}
+  BASE.rows.forEach(x=>x.push(x[3].join(" ")));}catch(e){BASE_ERR=e.message;}renderAll();renderBase();}
+const cestFmt=c=>c&&c.length===7?c.slice(0,2)+"."+c.slice(2,5)+"."+c.slice(5):c;
+const ncmFmt=n=>n.length>4?n.slice(0,4)+"."+n.slice(4,6)+(n.length>6?"."+n.slice(6):""):n;
+function naoOptMva(cest){if(!BASE||!cest)return null;const c=+cest;return BASE.naoOptante.find(([a,b])=>c>=+a&&c<=+b)||null}
+function findLegal(it,uf){
+  if(!BASE||uf!=="MT")return null;
+  const ncm=onlyDigits(it.ncm), cest=onlyDigits(it.cest);
+  let best=null,score=-1;
+  const pap=BASE.segs.findIndex(g=>/PORTA A PORTA/i.test(g));
+  for(const r of BASE.rows){ if(r[0]===pap) continue; // venda porta a porta: regime específico, não se aplica por NCM
+    const nm=r[3].filter(p=>ncm.startsWith(p)).sort((a,b)=>b.length-a.length)[0];
+    const ce=cest&&r[2]===cest;
+    let sc=-1; if(ce&&nm)sc=100+nm.length; else if(ce&&!r[3].length)sc=90; else if(ce)sc=50; else if(nm)sc=10+nm.length;
+    if(sc>score){score=sc;best={r,nm,ce}}
+  }
+  const cv=conv5291(it.pICMS,it.pRedBC);
+  if(!best||score<0) return {cls:"fora",fund:["Item não consta no Anexo Único da Portaria SEFAZ-MT 195/2019 (nem por CEST nem por NCM)."],conferir:["Confirmar que o produto não está sujeito à ST no MT (CEST "+(cest?cestFmt(cest):"ausente")+", NCM "+ncmFmt(ncm)+")."]};
+  const {r,nm,ce}=best, seg=BASE.segs[r[0]], rowCest=r[2];
+  const conferir=[], fund=[];
+  const cls=ce&&(nm||!r[3].length)?"enquadrado":"parcial";
+  if(ce&&!nm&&r[3].length) conferir.push(`CEST ${cestFmt(cest)} consta na portaria, mas o NCM ${ncmFmt(ncm)} não está na lista do item (${r[3].map(ncmFmt).join(", ")}).`);
+  if(!ce) conferir.push(cest?`O NCM ${ncmFmt(ncm)} consta no item ${r[1]} (CEST ${cestFmt(rowCest)}), mas o CEST da nota é ${cestFmt(cest)}.`:`NF sem CEST — enquadrado pelo NCM no item ${r[1]} (CEST ${cestFmt(rowCest)}).`);
+  if(BASE.meta.cestComMaisDeUmaMVA.includes(rowCest)) conferir.push(`O CEST ${cestFmt(rowCest)} tem mais de uma MVA no Anexo Único — confirmar a linha aplicável.`);
+  const regime=cfg.regimeMVA||"nao_optante"; let mva=r[5], mvaRef;
+  if(regime==="nao_optante"){const x=naoOptMva(rowCest); if(x){mva=x[2];mvaRef=`Portaria 195/2019, art. 2º-B, ${x[3]} (${x[4]}, contribuinte não optante pelo crédito outorgado): ${pct(x[2])}`} else {mvaRef=`Portaria 195/2019, Anexo Único (${seg}, item ${r[1]}): ${pct(r[5])} — art. 2º-B sem faixa para este CEST`;conferir.push("Art. 2º-B não traz faixa para este CEST: usada a MVA do Anexo Único.")}}
+  else if(regime==="atacadista"){mva=r2(r[5]*0.5);mvaRef=`Portaria 195/2019, Anexo Único (${seg}, item ${r[1]}) ${pct(r[5])} com redução de 50% do art. 2º-A: ${pct(mva)}`}
+  else mvaRef=`Portaria 195/2019, Anexo Único (${seg}, item ${r[1]}): ${pct(r[5])} — optante crédito outorgado/Simples (crédito limitado a 7%, art. 1º, §2º)`;
+  fund.push(`Enquadramento: ${seg}, item ${r[1]} — CEST ${cestFmt(rowCest)}, NCM ${r[3].map(ncmFmt).join(", ")||"—"}: ${r[4]}`);
+  fund.push(mvaRef);
+  fund.push("MVA aplicada sem ajuste — Portaria 195/2019, art. 3º, parágrafo único.");
+  let red=0;
+  const okList=String(cfg.conv5291ok||"").split(/[,;\s]+/).map(onlyDigits).filter(Boolean);
+  if(okList.some(p=>ncm.startsWith(p))){ red=67.05; fund.push("Base reduzida a 32,95% (máquinas e implementos agrícolas, Conv. ICMS 52/91 Anexo II — NCM confirmado pela empresa) — RICMS/MT, Anexo V, art. 25, II, b."); }
+  else if(Math.abs((it.pRedBCST||0)-67.05)<0.1){ red=67.05; fund.push("Base reduzida a 32,95% (fornecedor aplicou pRedBCST 67,05% — Conv. ICMS 52/91 Anexo II) — RICMS/MT, Anexo V, art. 25, II, b."); conferir.push("Redução do Conv. 52/91 indicada pelo fornecedor na ST — confirmar e incluir o NCM na lista da aba Empresa."); }
+  else if(cv&&cv.anexo){ if(/Anexo II/.test(cv.anexo)){red=67.05;fund.push("Base reduzida a 32,95% (máquinas e implementos agrícolas — Conv. ICMS 52/91, Anexo II) — RICMS/MT, Anexo V, art. 25, II, b.")} else {red=48.23;fund.push("Base reduzida a 51,77% (máquinas e equipamentos industriais — Conv. ICMS 52/91, Anexo I) — RICMS/MT, Anexo V, art. 25, II, a.")}
+    conferir.push(`Redução do Conv. 52/91 inferida da carga ${pct(cv.ef)} destacada pelo fornecedor — confirmar que o item consta no ${cv.anexo.split(" (")[0]} do convênio.`);}
+  fund.push(`Alíquota interna MT: ${BASE.meta.aliqInternaPadrao}%.`);
+  return {cls,row:r,seg,mva,red,aliq:BASE.meta.aliqInternaPadrao,fund,conferir,regime};
+}
+function calcItem(n,it){
+  const ufO=n.emit.uf, ufD=n.dest.uf;
+  let rule=findRule(it,ufD);
+  const out={it,rule,ufO,ufD,status:"",bcOp:0,mvaAp:0,bcST:0,proprio:0,icmsST:0,fcpST:0,inter:null};
+  const retida=it.vICMSST>0, podeComplementar=retida&&ufD===cfg.uf&&sentido(n)==="entrada";
+  if(retida&&!podeComplementar){out.status="retida";return out}
+  let legal=null;
+  if(!rule){ legal=findLegal(it,ufD);
+    if(legal&&legal.cls!=="fora"){ rule={id:"legal",uf:"MT",ncm:it.ncm,cest:it.cest,descricao:"Base legal · "+legal.seg.split(" - ")[1],mva:legal.mva,aliqInterna:legal.aliq,fcp:0,reducao:legal.red,ajustar:false,validada:true,fonte:legal.fund.join(" | ")}; out.rule=rule; out.legal=legal; }
+    else if(legal){ out.status="fora"; out.legal=legal; return out }
+    else { out.status="semregra"; return out } }
+  if(!/^6(10[1-9]|11[0-9]|12[0-9]|40[1-5])$/.test(it.cfop||"")) out.cfopAlert=`CFOP ${it.cfop} não é de venda/revenda (ex.: garantia, remessa, bonificação) — confirmar se há antecipação/ST devida.`;
+  const inter=interRate(it,ufO,ufD); out.inter=inter;
+  const intra=num(rule.aliqInterna)/100, mva=num(rule.mva)/100, red=num(rule.reducao)/100, fcp=num(rule.fcp)/100;
+  const bcOp=it.vProd-it.vDesc+it.vOutro+it.vSeg+(cfg.freteNaBase?it.vFrete:0)+(cfg.ipiNaBase?it.vIPI:0);
+  let mvaAp=mva;
+  const interF=(inter==null?intra*100:inter)/100;
+  if(rule.ajustar&&inter!=null&&interF<intra) mvaAp=((1+mva)*(1-interF)/(1-intra))-1;
+  const bcST=bcOp*(1+mvaAp)*(1-red);
+  const baseProp=it.vBC>0?it.vBC:(it.vProd-it.vDesc+it.vOutro+it.vSeg+(cfg.freteNaBase?it.vFrete:0));
+  const proprio=it.vICMS>0?it.vICMS:baseProp*interF;
+  const raw=Math.max(0,bcST*intra-proprio-(retida?it.vICMSST:0));
+  Object.assign(out,{status:retida?(raw>0.005?"complemento":"retida"):(out.legal?"legal":"ok"),bcOp,mvaAp,bcST:r2(bcST),proprio:r2(proprio),stRetida:retida?it.vICMSST:0,icmsRaw:raw,icmsST:r2(raw),fcpRaw:bcST*fcp,fcpST:r2(bcST*fcp)});
+  return out;
+}
+const isCalc=r=>r.status==="ok"||r.status==="legal"||r.status==="complemento";
+function calcAll(){return notes.map(n=>({n,rows:n.items.map(it=>calcItem(n,it))}))}
+function nextDue(){
+  if(cfg.vencRegra==="dia"){const d=new Date();const day=parseInt(cfg.diaVenc)||9;const x=new Date(d.getFullYear(),d.getMonth()+1,day);x.setMinutes(x.getMinutes()-x.getTimezoneOffset());return x.toISOString().slice(0,10)}
+  return todayISO();
+}
+function buildGuides(calc){
+  const out=[];
+  for(const {n,rows} of calc){
+    const st=r2(rows.reduce((a,r)=>a+(r.icmsRaw||0),0)), fcp=r2(rows.reduce((a,r)=>a+(r.fcpRaw||0),0)); // arredonda só o total da nota, como no DAR
+    const per=(n.dhEmi||"").slice(0,7);
+    const local=sentido(n)==="entrada"&&n.dest.uf===cfg.uf;
+    const rST=local?cfg.receitaLocal:cfg.receitaST, rF=local?cfg.receitaLocalFCP:cfg.receitaFCP;
+    const base={chave:n.chave,nNF:n.nNF,serie:n.serie,uf:n.dest.uf,periodo:per?per.slice(5,7)+"/"+per.slice(0,4):"",venc:nextDue(),n,local,
+      guia:local?"DAR · SEFAZ-"+n.dest.uf:"GNRE",portal:local?cfg.portalLocal:"https://www.gnre.pe.gov.br"};
+    const parts=[];
+    if(cfg.fcpSeparado){ if(st>0)parts.push({receita:rST,tipo:"ICMS-ST",valor:st}); if(fcp>0)parts.push({receita:rF,tipo:"FCP-ST",valor:fcp}); }
+    else if(st+fcp>0) parts.push({receita:rST,tipo:"ICMS-ST + FCP",valor:r2(st+fcp)});
+    parts.forEach(p=>out.push({...base,...p,id:(n.chave||n.id)+"-"+p.tipo}));
+  }
+  return out;
+}
+
+/* ---------- render ---------- */
+let tab="notas";
+function setTab(t){tab=t;$$("#tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===t));$$("[data-view]").forEach(s=>s.hidden=s.dataset.view!==t);try{localStorage.setItem("st_tab",t)}catch(e){}}
+$("#tabs").addEventListener("click",e=>{const b=e.target.closest("button[data-tab]");if(b)setTab(b.dataset.tab)});
+
+function renderAll(){
+  const calc=calcAll(), guides=buildGuides(calc);
+  $("#lnkLocal").href=cfg.portalLocal||"#"; $("#lnkLocal").textContent="Portal SEFAZ-"+(cfg.uf||"UF")+" ↗";
+  $("#companyLine").innerHTML=cfg.razao?`<b>${esc(cfg.razao)}</b><br><span class="mono">${esc(fmtCnpj(cfg.cnpj))}</span> · ${esc(cfg.uf)}`:`<button class="ghost" data-go="config">Configurar empresa →</button>`;
+  $("#cNotas").textContent=notes.length;
+  const allRows=calc.flatMap(c=>c.rows);
+  $("#cItens").textContent=allRows.filter(r=>isCalc(r)).length;
+  $("#cGuias").textContent=guides.filter(g=>!hist[g.id]).length;
+  $("#cRegras").textContent=rules.length;
+  $("#cHist").textContent=Object.keys(hist).length;
+  $("#btnClear").hidden=!notes.length;
+  renderPend(calc); renderNotes(calc); renderCalc(calc); renderGuides(guides); renderRules(); renderHist(); applyGate();
+}
+document.addEventListener("click",e=>{const g=e.target.closest("[data-go]");if(g)setTab(g.dataset.go)});
+
+let PEND_ITEMS=[];
+function renderPend(calc){
+  const P=[];PEND_ITEMS=[];
+  const sem={};calc.forEach(({n,rows})=>rows.filter(r=>r.status==="semregra").forEach(r=>{const k=r.ufD+"|"+r.it.ncm+"|"+r.it.cest;(sem[k]=sem[k]||{uf:r.ufD,ufO:r.ufO,it:r.it,ncm:r.it.ncm,cest:r.it.cest,desc:r.it.xProd,notas:new Set()}).notas.add(n.nNF)}));
+  Object.values(sem).forEach(x=>P.push({lvl:"bad",t:`Sem regra: NCM <span class="mono">${esc(x.ncm)}</span> CEST <span class="mono">${esc(x.cest||"—")}</span> para ${esc(x.uf)}`,d:`${esc(x.desc.slice(0,60))} · NF ${[...x.notas].join(", ")} — item não calculado`,a:`<div class="row"><button class="primary" data-analyze="${PEND_ITEMS.push({it:x.it,ufO:x.ufO,ufD:x.uf})-1}">Analisar NCM</button><button data-newrule="${esc(x.uf)}|${esc(x.ncm)}|${esc(x.cest)}|${esc(x.desc.slice(0,40))}">Criar regra manual</button></div>`}));
+  const cfA={};calc.forEach(({n,rows})=>rows.filter(r=>r.cfopAlert).forEach(r=>{(cfA[n.nNF]=cfA[n.nNF]||{n,r,c:new Set()}).c.add(r.it.cfop)}));
+  Object.values(cfA).forEach(({n,r,c})=>P.push({lvl:"warn",t:`NF ${esc(n.nNF)}: CFOP ${[...c].join(", ")} fora de venda`,d:esc(r.cfopAlert)+" "+esc((n.natOp||"").slice(0,60)),a:""}));
+  const conf={};calc.forEach(({n,rows})=>rows.filter(r=>r.legal&&r.legal.conferir.length).forEach(r=>{const k=r.it.ncm+"|"+r.it.cest;(conf[k]=conf[k]||{r,notas:new Set()}).notas.add(n.nNF)}));
+  Object.values(conf).forEach(({r,notas})=>P.push({lvl:"warn",t:`${r.status==="fora"?"Sem ST no MT?":"Conferir enquadramento"}: NCM <span class="mono">${esc(r.it.ncm)}</span> CEST <span class="mono">${esc(r.it.cest||"—")}</span>`,d:`${esc(r.it.xProd.slice(0,60))} · NF ${[...notas].join(", ")} — ${r.legal.conferir.map(esc).join(" ")}`,a:`<button data-analyze="${PEND_ITEMS.push({it:r.it,ufO:r.ufO,ufD:r.ufD})-1}">Analisar NCM</button>`}));
+  if(!BASE)P.push({lvl:"bad",t:"Base legal do MT não carregou",d:esc(BASE_ERR||"carregando…")+" — itens sem regra cadastrada não serão calculados.",a:""});
+  rules.filter(r=>num(r.mva)<=0||num(r.aliqInterna)<=0).forEach(r=>P.push({lvl:"warn",t:`Regra incompleta ${esc(r.uf)} · NCM <span class="mono">${esc(r.ncm)}</span> (rascunho, ignorada no cálculo)`,d:`${esc(r.descricao)} — preencha MVA e alíquota ou exclua. Enquanto isso vale a base legal.`,a:`<button data-go="regras">Abrir regras</button>`}));
+  rules.filter(r=>!r.validada&&num(r.mva)>0).forEach(r=>P.push({lvl:"warn",t:`Validar regra ${esc(r.uf)} · NCM <span class="mono">${esc(r.ncm)}</span>: IVA ${pct(num(r.mva))}, redução ${pct(num(r.reducao))}`,d:`Conferir na legislação da UF. Fonte atual: ${esc(r.fonte||"—")}`,a:canEditRules?`<button data-validate="${esc(r.id)}">Marcar como validada</button>`:""}));
+  if(false)P.push({lvl:"warn",t:"DAR campo 23 (Inf. complementares) não configurado",d:"Na guia paga aparece “033/86.520.517-11”. Informe na aba Empresa se for fixo.",a:`<button data-go="config">Abrir Empresa</button>`});
+  const recv=buildGuides(calc).filter(g=>!g.receita);
+  if(recv.length)P.push({lvl:"bad",t:"Guia sem código de receita",d:"Configure o código na aba Empresa.",a:`<button data-go="config">Abrir Empresa</button>`});
+  $("#pendPanel").hidden=!P.length; $("#pendCount").textContent=P.length+" item(ns)";
+  $("#pendList").innerHTML=P.map(p=>`<div class="note-card"><div><div class="row" style="gap:8px"><span class="pill ${p.lvl}">${p.lvl==="bad"?"bloqueia cálculo":"conferir"}</span><b>${p.t}</b></div><div class="muted" style="font-size:13px">${p.d}</div></div><div>${p.a}</div></div>`).join("");
+}
+$("#pendList")&&document.addEventListener("click",e=>{
+  const nr=e.target.closest("#pendList [data-newrule]"); if(nr){const [uf,ncm,cest,desc]=nr.dataset.newrule.split("|");addRule({uf,ncm,cest,descricao:desc});setTab("regras");return}
+  const v=e.target.closest("[data-validate]"); if(v){const r=rules.find(x=>x.id===v.dataset.validate);if(r){r.validada=true;saveRule(r);renderAll();toast("Regra marcada como validada")}}
+});
+function renderNotes(calc){
+  const el=$("#notesList");
+  if(!notes.length){el.innerHTML=`<div class="empty" style="text-align:left;max-width:560px;margin:0 auto"><b>Como usar</b><ol class="steps" style="margin-top:6px"><li>Arraste os XMLs das NF-e de compra acima (de qualquer filial).</li><li>Confira os valores na aba <b>Cálculo</b> e resolva o que aparecer em <b>Pendências</b>.</li><li>Na aba <b>Guias</b>, copie os campos para o DAR no portal da SEFAZ-MT, emita e registre o número.</li><li>Baixe a <b>memória de cálculo em PDF</b> de cada nota para enviar ao cliente.</li></ol></div>`;return}
+  el.innerHTML=calc.map(({n,rows})=>{
+    const s=sentido(n), st=r2(rows.reduce((a,r)=>a+(r.icmsRaw||0)+(r.fcpRaw||0),0));
+    const sem=rows.filter(r=>r.status==="semregra").length, ret=rows.filter(r=>r.status==="retida").length;
+    const sp=s==="entrada"?`<span class="pill acc">Entrada · antecipação</span>`:s==="saida"?`<span class="pill acc">Saída · substituto</span>`:`<span class="pill neu">Sentido indefinido</span>`;
+    return `<div class="note-card">
+      <div><div class="row" style="gap:8px"><h3>NF-e ${esc(n.nNF)}/${esc(n.serie)}</h3>${sp}
+        ${/EXEMPLO/i.test(n.emit.nome)?'<span class="pill warn">exemplo</span>':''}
+        ${sem?`<span class="pill warn">${sem} sem regra</span>`:''}${ret?`<span class="pill neu">${ret} com ST retida</span>`:''}</div>
+        <div class="muted">${esc(n.emit.nome)} <span class="mono">${esc(n.emit.uf)}</span> → ${esc(n.dest.nome)} <span class="mono">${esc(n.dest.uf)}</span> · ${brDate(n.dhEmi)} · ${n.items.length} itens · NF R$ ${fmt(n.vNF)}</div>
+        <div class="chave">${esc(n.chave)}</div></div>
+      <div style="text-align:right"><div class="label">ST + FCP</div><div class="mono" style="font-size:17px">R$ ${fmt(st)}</div>
+        <div class="row" style="justify-content:flex-end;gap:4px;margin-top:4px">${st>0?`<button data-pdf="${esc(n.id)}">Memória de cálculo (PDF)</button>`:""}<button class="ghost danger" data-rm="${esc(n.id)}">remover</button></div></div>
+    </div>`}).join("");
+}
+$("#notesList").addEventListener("click",e=>{const pdf=e.target.closest("[data-pdf]");if(pdf){memoriaPDF(pdf.dataset.pdf);return}
+  const b=e.target.closest("[data-rm]");if(!b)return;
+  if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="confirmar?";setTimeout(()=>{b.dataset.confirm="";b.textContent="remover"},3000);return}
+  const id=b.dataset.rm;notes=notes.filter(n=>n.id!==id);saveNotes();dropNote(id);renderAll()});
+
+function renderCalc(calc){
+  const only=$("#onlyST").checked;
+  const all=calc.flatMap(c=>c.rows);
+  const tot=k=>all.reduce((a,r)=>a+(r[k]||0),0);
+  $("#sumBox").innerHTML=`
+    <div><div class="label">Notas</div><div class="v">${notes.length}</div></div>
+    <div><div class="label">Itens com ST calculada</div><div class="v">${all.filter(r=>isCalc(r)).length}</div></div>
+    <div><div class="label">BC ST</div><div class="v">${fmt(tot("bcST"))}</div></div>
+    <div><div class="label">ICMS-ST a recolher</div><div class="v accent">${fmt(r2(tot("icmsRaw")))}</div></div>
+    <div><div class="label">FCP-ST</div><div class="v">${fmt(tot("fcpST"))}</div></div>
+    <div><div class="label">Sem regra</div><div class="v" style="color:${all.some(r=>r.status==="semregra")?'var(--warn)':'inherit'}">${all.filter(r=>r.status==="semregra").length}</div></div>`;
+  if(!notes.length){$("#calcTbl").innerHTML=`<tr><td class="empty">Importe notas para ver o cálculo.</td></tr>`;return}
+  let h=`<thead><tr><th>Item</th><th>NCM / CEST</th><th>Situação</th><th class="num">Base op.</th><th class="num">Alíq. inter</th><th class="num">MVA orig.</th><th class="num">MVA aplic.</th><th class="num">BC ST</th><th class="num">Alíq. int.</th><th class="num">ICMS próprio</th><th class="num">ICMS-ST</th><th class="num">FCP-ST</th></tr></thead><tbody>`;
+  for(const {n,rows} of calc){
+    const vis=only?rows.filter(r=>r.status!=="retida"):rows;
+    if(!vis.length)continue;
+    h+=`<tr class="sub"><td colspan="12">NF-e ${esc(n.nNF)} · ${esc(n.emit.uf)} → ${esc(n.dest.uf)} · ${esc(n.emit.nome)}</td></tr>`;
+    for(const r of vis){
+      const it=r.it, st={ok:'<span class="pill ok">regra cadastrada</span>',legal:`<span class="pill acc">base legal</span>${r.legal&&r.legal.conferir.length?' <span class="pill warn">conferir</span>':''}`,fora:'<span class="pill neu">sem ST no MT</span>',complemento:`<span class="pill warn">complemento</span><div class="faint" style="font-size:11px">ST retida R$ ${fmt(r.stRetida)} (${it.pMVAST?"MVA "+pct(it.pMVAST):"MVA não informada"})</div>`,semregra:`<span class="pill warn">sem regra ${esc(r.ufD)}</span>`,retida:'<span class="pill neu">ST retida</span>'}[r.status];
+      const d=isCalc(r);
+      h+=`<tr><td class="desc"><span class="mono faint">${esc(it.nItem)}</span> ${esc(it.xProd)}<div class="faint" style="font-size:12px">CFOP ${esc(it.cfop)} · CST ${esc(it.orig)}${esc(it.cst)}${r.rule&&!r.legal?` · regra: ${esc(r.rule.descricao)}`:''}</div>${r.legal?`<details style="margin-top:4px"><summary style="font-size:12px">fundamentação</summary><ul class="steps" style="font-size:12px">${r.legal.fund.map(f=>`<li>${esc(f)}</li>`).join("")}${r.legal.conferir.map(f=>`<li style="color:var(--warn)">${esc(f)}</li>`).join("")}</ul></details>`:''}</td>
+      <td class="mono">${esc(it.ncm)}<div class="faint">${esc(it.cest)||"—"}</div></td><td>${st}${r.status==="semregra"?`<div><button class="ghost" style="padding:2px 0;font-size:12px" data-newrule="${esc(r.ufD)}|${esc(it.ncm)}|${esc(it.cest)}|${esc(it.xProd.slice(0,40))}">+ criar regra</button> · <button class="ghost" style="padding:2px 0;font-size:12px" data-analyzeit="${esc(n.id)}|${esc(it.nItem)}">analisar NCM</button></div>`:''}</td>
+      <td class="num">${d?fmt(r.bcOp):"—"}</td><td class="num">${d&&r.inter!=null?pct(r.inter):"—"}</td><td class="num">${d?pct(num(r.rule.mva)):"—"}</td>
+      <td class="num">${d?pct(r.mvaAp*100):"—"}</td><td class="num">${d?fmt(r.bcST):"—"}</td><td class="num">${d?pct(num(r.rule.aliqInterna)):"—"}</td>
+      <td class="num">${d?fmt(r.proprio):(r.status==="retida"?fmt(it.vICMS):"—")}</td><td class="num"><b>${d?fmt(r.icmsST):(r.status==="retida"?fmt(it.vICMSST):"—")}</b></td><td class="num">${d?fmt(r.fcpST):"—"}</td></tr>`;
+    }
+  }
+  $("#calcTbl").innerHTML=h+"</tbody>";
+}
+$("#onlyST").addEventListener("change",()=>renderAll());
+$("#calcTbl").addEventListener("click",e=>{const a=e.target.closest("[data-analyzeit]");if(a){const [nid,ni]=a.dataset.analyzeit.split("|");const n=notes.find(x=>x.id===nid);const it=n&&n.items.find(i=>i.nItem===ni);if(it){fillQ(it,n.emit.uf,n.dest.uf);setTab("consulta");runLocal()}return}
+const b=e.target.closest("[data-newrule]");if(!b)return;const [uf,ncm,cest,desc]=b.dataset.newrule.split("|");addRule({uf,ncm,cest,descricao:desc});setTab("regras")});
+
+function codMunFilial(cnpj){const m=String(cfg.filiais||"").split(/[;\n]+/).map(x=>x.split("=").map(s=>s.trim())).find(([c])=>onlyDigits(c)===onlyDigits(cnpj));return m?m[1]:(onlyDigits(cnpj)===onlyDigits(cfg.cnpj)?cfg.codMunSefaz:"")}
+function renderGuides(guides){
+  const el=$("#guides");
+  if(!guides.length){el.innerHTML=`<div class="panel empty" style="grid-column:1/-1">Nenhuma guia com valor a recolher. ${notes.length?'Verifique itens sem regra na aba Cálculo.':'Importe notas primeiro.'}</div>`;return}
+  el.innerHTML=guides.map(g=>{
+    const h=hist[g.id], n=g.n, s=sentido(n);
+    const contrib=s==="entrada"?n.dest:n.emit;
+    const who=s==="entrada"?"Contribuinte (destinatário)":"Contribuinte emitente";
+    const fields=g.local?[
+      ["01 Contribuinte",onlyDigits(n.dest.cnpj).slice(0,8)===onlyDigits(cfg.cnpj).slice(0,8)&&cfg.razao?cfg.razao:n.dest.nome],["05 CNPJ",fmtCnpj(n.dest.cnpj)],["06 Inscrição estadual",n.dest.ie],
+      ["02 Endereço",onlyDigits(n.dest.cnpj)===onlyDigits(cfg.cnpj)&&cfg.endereco?cfg.endereco:n.dest.end],["10 Município",n.dest.mun],["20 Cód. município",codMunFilial(n.dest.cnpj)||"⚠ informar em Empresa → Filiais"],
+      ["21 Período ref.",g.periodo],["22 Vencimento",brDate(g.venc)],["25 Código receita",g.receita||"⚠ configurar na aba Empresa"],["26 Valor",fmt(g.valor)],
+      ["32 Doc. destinatário",onlyDigits(n.dest.cnpj)],["32 Nome destinatário",n.dest.nome],["32 NF-e",String(n.nNF).padStart(9,"0")],["Chave NF-e",g.chave],
+      ["Fornecedor",n.emit.nome+" · "+n.emit.uf]
+    ]:[
+      ["UF favorecida",g.uf],["Receita",(g.receita||"⚠ configurar na aba Empresa")+" · "+g.tipo],...(g.local?[]:[["Tipo doc. origem",cfg.tipoDoc]]),["Doc. origem (chave)",g.chave],
+      ["Período ref.",g.periodo],["Vencimento",brDate(g.venc)],["Valor principal",fmt(g.valor)],
+      [who+" CNPJ",fmtCnpj(contrib.cnpj)],["Razão social",contrib.nome],["Endereço",contrib.end],["Município / UF",contrib.mun+" / "+contrib.uf],["CEP",contrib.cep],
+      ["Destinatário CNPJ",fmtCnpj(n.dest.cnpj)],["Destinatário município",n.dest.mun],
+      ["Inf. complementares",`${g.tipo} ref. NF-e ${n.nNF} série ${n.serie} de ${brDate(n.dhEmi)}`]
+    ];
+    const copyVal=(k,v)=>/Valor/.test(k)?v:(/CNPJ|CEP|chave|Inscrição/i.test(k)?onlyDigits(v):v);
+    return `<article class="guide">
+      <div class="guide-h"><div><div class="label">${esc(g.guia)} · ${esc(g.tipo)} · NF-e ${esc(g.nNF)}</div><div class="amt">R$ ${fmt(g.valor)}</div></div>
+        ${h?`<span class="pill ${h.status==="paga"?"ok":"acc"}">${h.status==="paga"?"paga":"emitida"}</span>`:`<span class="pill warn">a emitir</span>`}</div>
+      <div class="gf">${fields.map(([k,v])=>`<span class="k">${esc(k)}</span><span class="v">${esc(v)||'<span class="faint">—</span>'}</span><button data-copy="${esc(copyVal(k,v))}" aria-label="Copiar ${esc(k)}">copiar</button>`).join("")}</div>
+      <div class="guide-f">
+        ${h?`<div class="muted" style="font-size:12px">Emitida em ${brDate(h.emitidaEm)}${h.controle?` · nº <span class="mono">${esc(h.controle)}</span>`:''}</div>
+             <div class="row"><button data-pay="${esc(g.id)}" ${h.status==="paga"?"disabled":""}>Marcar como paga</button><button class="ghost danger" data-undo="${esc(g.id)}">Desfazer registro</button></div>`
+          :`<div class="field"><label class="label" for="ctl-${esc(g.id)}">${g.local?"Nº do DAR (campo 23, gerado pela SEFAZ) ou linha digitável":"Nº controle / linha digitável"}</label><input id="ctl-${esc(g.id)}" class="mono" placeholder="cole aqui após gerar no portal"></div>
+             <div class="row"><a class="btn" href="${esc(g.portal)}" target="_blank" rel="noopener">Portal ↗</a><button data-gpdf="${esc(g.n.id)}">Memória PDF</button><button class="primary" data-emit="${esc(g.id)}">Registrar emissão</button><button data-copyjson="${esc(g.id)}">Copiar dados (JSON)</button></div>`}
+      </div></article>`}).join("");
+  el._guides=guides;
+}
+function guideJson(g){const n=g.n,s=sentido(n),c=s==="entrada"?n.dest:n.emit;return {guia:g.guia,ufFavorecida:g.uf,receita:g.receita,tipo:g.tipo,tipoDocOrigem:cfg.tipoDoc,docOrigem:g.chave,periodo:g.periodo,vencimento:brDate(g.venc),valor:g.valor.toFixed(2),contribuinte:{cnpj:onlyDigits(c.cnpj),razao:c.nome,ie:c.ie,endereco:c.end,municipio:c.mun,codMunicipio:c.cMun,uf:c.uf,cep:c.cep,fone:c.fone},destinatario:{cnpj:onlyDigits(n.dest.cnpj),razao:n.dest.nome,municipio:n.dest.mun,codMunicipio:n.dest.cMun},infComplementares:`${g.tipo} ref. NF-e ${n.nNF} série ${n.serie}`}}
+$("#guides").addEventListener("click",async e=>{
+  const el=$("#guides"),gs=el._guides||[];
+  const gp=e.target.closest("[data-gpdf]"); if(gp){memoriaPDF(gp.dataset.gpdf);return}
+  const c=e.target.closest("[data-copy]"); if(c){copy(c.dataset.copy);return}
+  const cj=e.target.closest("[data-copyjson]"); if(cj){const g=gs.find(x=>x.id===cj.dataset.copyjson);copy(JSON.stringify(guideJson(g),null,2));return}
+  const em=e.target.closest("[data-emit]");
+  if(em){const g=gs.find(x=>x.id===em.dataset.emit);const ctl=document.getElementById("ctl-"+g.id).value.trim();
+    const rec={chave:g.chave,nNF:g.nNF,uf:g.uf,receita:g.receita,tipo:g.tipo,valor:g.valor,vencimento:g.venc,periodo:g.periodo,controle:ctl,status:"emitida",emitidaEm:todayISO(),emitente:g.n.emit.nome,destinatario:g.n.dest.nome};
+    await saveHist(g.id,rec);toast("Emissão registrada");return}
+  const pay=e.target.closest("[data-pay]"); if(pay){const r={...hist[pay.dataset.pay],status:"paga",pagaEm:todayISO()};delete r.id;await saveHist(pay.dataset.pay,r);toast("Marcada como paga");return}
+  const un=e.target.closest("[data-undo]"); if(un){
+    if(un.dataset.confirm!=="1"){un.dataset.confirm="1";un.textContent="Confirmar desfazer?";setTimeout(()=>{un.dataset.confirm="";un.textContent="Desfazer registro"},3000);return}
+    await delHist(un.dataset.undo);toast("Registro removido")}
+});
+async function saveHist(id,rec){hist[id]={id,...rec};renderAll();if(dbReady){try{await db.doc("guias/"+safeId(id)).set(rec)}catch(e){toast("Não foi possível salvar no banco: "+(e.code||e.message))}}else lsSet("st_hist",hist)}
+async function delHist(id){delete hist[id];renderAll();if(dbReady){try{await db.doc("guias/"+safeId(id)).delete()}catch(e){}}else lsSet("st_hist",hist)}
+function renderBase(){
+  const cb=$("#cBase"); if(cb) cb.textContent=BASE?BASE.rows.length:"!";
+  if(!BASE){$("#baseMeta").textContent=BASE_ERR?"Não foi possível carregar a base: "+BASE_ERR:"Carregando…";return}
+  $("#baseMeta").innerHTML=`${esc(BASE.meta.fonte)} · ${BASE.rows.length} itens · extraído em ${brDate(BASE.meta.extraidoEm)} · <a href="${esc(BASE.meta.url)}" target="_blank" rel="noopener">texto oficial ↗</a>`;
+  const sel=$("#baseSeg"); if(sel.options.length<2) BASE.segs.forEach((g,i)=>sel.insertAdjacentHTML("beforeend",`<option value="${i}">${esc(g)}</option>`));
+  const qq=$("#baseQ").value.trim().toLowerCase(), qd=onlyDigits(qq), sg=sel.value;
+  let rows=BASE.rows.filter(r=>(sg===""||r[0]==+sg)&&(!qq||(qd.length>=2&&(r[2].startsWith(qd)||r[3].some(n=>n.startsWith(qd)||qd.startsWith(n))))||r[4].toLowerCase().includes(qq)));
+  $("#baseCount").textContent=`${rows.length} item(ns)`+(rows.length>200?" — mostrando os 200 primeiros; refine a busca":"");
+  const reg=cfg.regimeMVA||"nao_optante";
+  $("#baseTbl").innerHTML=`<thead><tr><th>Segmento / item</th><th>CEST</th><th>NCM/SH</th><th>Descrição</th><th class="num">MVA Anexo Único<br><span style="text-transform:none;font-weight:400">optante / Simples</span></th><th class="num">MVA art. 2º-B<br><span style="text-transform:none;font-weight:400">não optante</span></th></tr></thead><tbody>`+
+    rows.slice(0,200).map(r=>{const x=naoOptMva(r[2]);return `<tr><td style="font-size:12px">${esc(BASE.segs[r[0]].split(" - ")[0])} · ${esc(r[1])}</td><td class="mono">${cestFmt(r[2])}</td><td class="mono" style="font-size:12px">${r[3].map(ncmFmt).join("<br>")||"—"}</td><td class="desc" style="max-width:420px">${esc(r[4])}</td><td class="num"${reg!=="nao_optante"?' style="font-weight:600"':''}>${pct(r[5])}</td><td class="num"${reg==="nao_optante"?' style="font-weight:600"':''}>${x?pct(x[2]):"—"}</td></tr>`}).join("")+"</tbody>";
+  $("#normasList").innerHTML=BASE.normas.map(n=>`<div class="note-card"><div><b>${esc(n.ref)}</b><div class="muted" style="font-size:13px">${esc(n.txt)}</div></div><div><a class="btn" href="${esc(n.url)}" target="_blank" rel="noopener">Ler ↗</a></div></div>`).join("");
+}
+let baseT; $("#baseQ").addEventListener("input",()=>{clearTimeout(baseT);baseT=setTimeout(renderBase,200)}); $("#baseSeg").addEventListener("change",renderBase);
+
+/* ---------- inteligência NCM ---------- */
+const CEST_SEG={"01":"Autopeças","02":"Bebidas alcoólicas, exceto cerveja e chope","03":"Cervejas, chopes, refrigerantes, águas e outras bebidas","04":"Cigarros e outros produtos derivados do fumo","05":"Cimentos","06":"Combustíveis e lubrificantes","07":"Energia elétrica","08":"Ferramentas","09":"Lâmpadas, reatores e starter","10":"Materiais de construção e congêneres","11":"Materiais de limpeza","12":"Materiais elétricos","13":"Medicamentos e outros produtos farmacêuticos","14":"Papéis, plásticos, produtos cerâmicos e vidros","15":"Plásticos","16":"Pneumáticos, câmaras de ar e protetores","17":"Produtos alimentícios","18":"Artefatos de uso doméstico","19":"Produtos de perfumaria e de higiene pessoal","20":"Produtos de higiene pessoal","21":"Produtos eletrônicos, eletroeletrônicos e eletrodomésticos","22":"Rações para animais domésticos","23":"Sorvetes e preparados","24":"Tintas e vernizes","25":"Veículos automotores","26":"Veículos de duas e três rodas","27":"Venda de mercadorias pelo sistema porta a porta","28":"Venda porta a porta"};
+function conv5291(picms,red){ if(!picms||!red) return null; const ef=Math.round(picms*(1-red/100)*100)/100;
+  if(Math.abs(ef-4.1)<0.06||Math.abs(ef-5.6)<0.06) return {ef,anexo:"Anexo II (máquinas e implementos agrícolas)"};
+  if(Math.abs(ef-5.14)<0.06||Math.abs(ef-8.8)<0.06) return {ef,anexo:"Anexo I (máquinas e equipamentos industriais)"};
+  return {ef,anexo:null}; }
+function rankRules(q){
+  const ncm=onlyDigits(q.ncm), cest=onlyDigits(q.cest), uf=(q.ufD||"").toUpperCase(), seg=cest.slice(0,2);
+  const out=[];
+  for(const r of rules){ const rn=onlyDigits(r.ncm), rc=onlyDigits(r.cest); let sc=0, why=[];
+    if(rc&&cest&&rc===cest){sc+=60;why.push("CEST igual")} else if(rc&&seg&&rc.slice(0,2)===seg){sc+=10;why.push("mesmo segmento CEST")}
+    let common=0; while(common<Math.min(rn.length,ncm.length)&&rn[common]===ncm[common])common++;
+    if(rn&&ncm.startsWith(rn)){sc+=rn.length*4;why.push(`NCM ${rn.length===8?"idêntico":"prefixo "+rn}`)} else if(common>=4){sc+=common*2;why.push(`NCM parecido (${common} dígitos)`)} else if(common>=2){sc+=common;why.push("mesmo capítulo NCM")}
+    if((r.uf||"").toUpperCase()===uf){sc+=20;why.push("mesma UF")} else why.push("outra UF — só referência");
+    if(sc>20) out.push({r,sc,why,aplica:(r.uf||"").toUpperCase()===uf&&(rn&&ncm.startsWith(rn)&&(!rc||!cest||rc===cest))});
+  }
+  return out.sort((a,b)=>b.sc-a.sc).slice(0,6);
+}
+function readQ(){return {ncm:$("#qNcm").value,cest:$("#qCest").value,ufO:$("#qUfO").value.toUpperCase(),ufD:($("#qUfD").value||cfg.uf).toUpperCase(),picms:num($("#qPicms").value),red:num($("#qRed").value),cfop:$("#qCfop").value,desc:$("#qDesc").value}}
+function fillQ(it,ufO,ufD){$("#qNcm").value=it.ncm||"";$("#qCest").value=it.cest||"";$("#qUfO").value=ufO||"";$("#qUfD").value=ufD||cfg.uf||"";$("#qPicms").value=it.pICMS||"";$("#qRed").value=it.pRedBC||"";$("#qCfop").value=it.cfop||"";$("#qDesc").value=it.xProd||""}
+function runLocal(){
+  const q=readQ(); if(!onlyDigits(q.ncm)){toast("Informe o NCM");return}
+  const seg=CEST_SEG[onlyDigits(q.cest).slice(0,2)], cv=conv5291(q.picms,q.red), list=rankRules(q);
+  $("#localRes").hidden=false;
+  $("#localHint").innerHTML=[seg?`Segmento CEST: <b>${esc(seg)}</b>`:(q.cest?"CEST fora da tabela de segmentos":"Sem CEST — item pode não estar sujeito a ST"),cv&&cv.anexo?`Carga origem ${pct(cv.ef)} → Conv. 52/91 ${esc(cv.anexo)}`:""].filter(Boolean).join(" · ");
+  const lg=findLegal({ncm:q.ncm,cest:q.cest,pICMS:q.picms,pRedBC:q.red},q.ufD);
+  const legalCard=lg?(lg.cls==="fora"?`<div class="note-card"><div><div class="row" style="gap:8px"><span class="pill neu">sem ST no MT</span><b>Não consta na Portaria SEFAZ-MT 195/2019</b></div><div class="muted" style="font-size:13px">${lg.conferir.map(esc).join(" ")}</div></div><div></div></div>`
+    :`<div class="note-card" style="background:var(--accent-soft)"><div><div class="row" style="gap:8px"><span class="pill acc">base legal</span><b>MVA ${pct(lg.mva)} · alíq. ${pct(lg.aliq)} · redução BC ${pct(lg.red)}</b>${lg.conferir.length?'<span class="pill warn">conferir</span>':'<span class="pill ok">enquadrado</span>'}</div><ul class="steps" style="font-size:13px;margin-top:6px">${lg.fund.map(f=>`<li>${esc(f)}</li>`).join("")}${lg.conferir.map(f=>`<li style="color:var(--warn)">${esc(f)}</li>`).join("")}</ul></div>
+      <div>${canEditRules?`<button class="primary" data-legalrule="1">Salvar como regra validada</button>`:""}</div></div>`):"";
+  window.__lastLegal={lg,q};
+  $("#localList").innerHTML=legalCard+(list.length?list.map(x=>`<div class="note-card"><div><div class="row" style="gap:8px">${x.aplica?'<span class="pill ok">aplica automaticamente</span>':'<span class="pill neu">candidata</span>'}<b>${esc(x.r.uf)} · NCM <span class="mono">${esc(x.r.ncm)}</span> · CEST <span class="mono">${esc(x.r.cest||"—")}</span></b>${x.r.validada?'<span class="pill ok">validada</span>':'<span class="pill warn">não validada</span>'}</div>
+    <div class="muted" style="font-size:13px">${esc(x.r.descricao)} — IVA ${pct(num(x.r.mva))}${x.r.ajustar?"":" (já ajustado)"}, alíq. ${pct(num(x.r.aliqInterna))}, redução ${pct(num(x.r.reducao))}${num(x.r.fcp)?`, FCP ${pct(num(x.r.fcp))}`:""}</div><div class="faint" style="font-size:12px">${x.why.join(" · ")} · afinidade ${x.sc}</div></div>
+    <div>${!x.aplica&&canEditRules?`<button data-clone="${esc(x.r.id)}">Copiar para este NCM</button>`:""}</div></div>`).join(""):`<div class="empty">Nenhuma regra cadastrada parecida.</div>`);
+}
+$("#btnLocal").addEventListener("click",runLocal);
+$("#localList").addEventListener("click",e=>{const lr=e.target.closest("[data-legalrule]");if(lr){const {lg,q}=window.__lastLegal||{};if(!lg)return;
+  const r={id:"r"+Date.now().toString(36),uf:q.ufD,ncm:onlyDigits(q.ncm),cest:onlyDigits(q.cest),descricao:(q.desc||lg.row[4]).slice(0,60),mva:lg.mva,aliqInterna:lg.aliq,fcp:0,reducao:lg.red,ajustar:false,fonte:lg.fund.join(" | ").slice(0,480),validada:!lg.conferir.length};
+  rules.push(r);saveRule(r);renderAll();runLocal();toast("Regra salva com a fundamentação legal");return}
+  const b=e.target.closest("[data-clone]");if(!b)return;const src=rules.find(r=>r.id===b.dataset.clone),q=readQ();
+  const r={...src,id:"r"+Date.now().toString(36),uf:q.ufD,ncm:onlyDigits(q.ncm),cest:onlyDigits(q.cest),descricao:(q.desc||src.descricao).slice(0,60),fonte:`copiada de ${src.uf}/${src.ncm} — validar`,validada:false};
+  rules.push(r);saveRule(r);renderAll();runLocal();toast("Regra criada a partir da candidata — valide antes de recolher")});
+let aiCtl=null, lastAI=null;
+async function runAI(){
+  const q=readQ(); if(!onlyDigits(q.ncm)){toast("Informe o NCM");return}
+  let sample=null; try{sample=window.claude&&window.claude.use?await window.claude.use("sample"):null}catch(e){}
+  if(!sample){$("#aiStatus").textContent="Análise com Claude indisponível nesta visualização.";return}
+  runLocal();
+  const cv=conv5291(q.picms,q.red), cand=rankRules(q).map(x=>({uf:x.r.uf,ncm:x.r.ncm,cest:x.r.cest,descricao:x.r.descricao,iva:x.r.mva,ivaJaAjustado:!x.r.ajustar,aliqInterna:x.r.aliqInterna,reducaoBC:x.r.reducao,fcp:x.r.fcp,validada:!!x.r.validada,fonte:x.r.fonte}));
+  const prompt=`Você é um consultor tributário especialista em ICMS-ST (substituição tributária e antecipação) no Brasil.
+Analise o item abaixo, recebido por contribuinte do ICMS, e diga qual é a melhor regra de cálculo do ICMS-ST na UF de destino.
+
+Empresa: ${cfg.razao} (CNPJ ${cfg.cnpj}), UF ${cfg.uf}, regime normal. As entradas interestaduais sem ST retida são recolhidas pelo destinatário (DAR receita ${cfg.receitaLocal||"—"}).
+Prática atual da empresa: BC ST = (vProd + IPI + frete + seguro + outros − desconto) × (1 + IVA ajustado) × (1 − redução BC); ICMS ST = BC ST × alíquota interna − ICMS destacado.
+
+ITEM
+- NCM: ${q.ncm}
+- CEST: ${q.cest||"(não informado)"}${CEST_SEG[onlyDigits(q.cest).slice(0,2)]?" — segmento "+CEST_SEG[onlyDigits(q.cest).slice(0,2)]:""}
+- Descrição: ${q.desc||"(não informada)"}
+- CFOP: ${q.cfop||"—"} · UF origem: ${q.ufO||"—"} · UF destino: ${q.ufD}
+- Alíquota ICMS destacada: ${q.picms||"—"}% · Redução de BC na origem: ${q.red||0}%${cv?` (carga efetiva ${cv.ef}%${cv.anexo?", compatível com Conv. ICMS 52/91 "+cv.anexo:""})`:""}
+
+ENQUADRAMENTO ENCONTRADO NA BASE LEGAL OFICIAL (Portaria SEFAZ-MT 195/2019, extraída do portal da SEFAZ-MT — trate como fonte primária):
+${(()=>{const lg=findLegal({ncm:q.ncm,cest:q.cest,pICMS:q.picms,pRedBC:q.red},q.ufD);return lg?JSON.stringify({classificacao:lg.cls,mva:lg.mva,reducao:lg.red,aliquota:lg.aliq,fundamentacao:lg.fund,conferir:lg.conferir}):"(base legal só cobre MT ou não carregou)"})()}
+Normas da base: ${BASE?BASE.normas.map(n=>n.ref+": "+n.txt).join(" || "):"—"}
+
+REGRAS JÁ CADASTRADAS MAIS PARECIDAS (podem ser referência):
+${JSON.stringify(cand,null,1)}
+
+Considere: Convênio ICMS 142/18 e seus anexos (CEST/segmentos), protocolos/convênios aplicáveis à UF de destino, o RICMS da UF de destino (para MT, Decreto 2.212/2014 e seu Anexo X), Conv. ICMS 52/91 (redução de base de máquinas e implementos), fórmula da MVA ajustada e se a UF aplica a MVA ajustada considerando cargas efetivas reduzidas.
+Se a base legal oficial acima trouxer o enquadramento, parta dela e explique; só divirja se houver motivo técnico claro (ex.: NCM/CEST incompatíveis). Seja honesto: você não tem acesso à internet; se não tiver certeza de um percentual, diga e marque confiança baixa. Nunca invente número de dispositivo legal.
+
+Responda SOMENTE com um objeto JSON neste formato:
+{"sujeitoST":true,"segmento":"Autopeças (CEST 01)","enquadramento":"texto curto","ivaOriginal":0,"ivaAjustado":0,"usarIvaJaAjustado":true,"aliquotaInterna":17,"reducaoBC":0,"cargaEfetivaInterna":0,"fcp":0,"regraRecomendada":"usar regra cadastrada X | criar nova","fundamentacao":["..."],"calculoExemplo":"passo a passo curto com os percentuais","pontosAValidar":["..."],"confianca":"alta|media|baixa"}`;
+  aiCtl=new AbortController(); $("#btnAI").disabled=true; $("#btnAIStop").hidden=false; $("#aiStatus").textContent="Analisando… (pode levar até 1 minuto)";
+  try{
+    const d=await sample.json(prompt,{signal:aiCtl.signal,modelTier:"complex"}); lastAI={q,d}; renderAI();
+    $("#aiStatus").textContent="";
+  }catch(e){ $("#aiStatus").textContent=e.code==="cancelled"?"Análise interrompida.":e.code==="not_granted"?"Uso do Claude não autorizado nesta página.":e.code==="rate_limited"?"Muitas análises seguidas — aguarde um pouco.":"Não foi possível analisar: "+(e.message||e.code); }
+  finally{ $("#btnAI").disabled=false; $("#btnAIStop").hidden=true; }
+}
+function renderAI(){
+  const {q,d}=lastAI; const c=(d.confianca||"").toLowerCase();
+  $("#aiRes").hidden=false;
+  $("#aiConf").innerHTML=`<span class="pill ${c==="alta"?"ok":c==="media"||c==="média"?"warn":"bad"}">confiança ${esc(d.confianca||"—")}</span>`;
+  const li=a=>(a||[]).map(x=>`<li>${esc(x)}</li>`).join("");
+  $("#aiBody").innerHTML=`<div style="display:grid;gap:12px">
+   <div class="row" style="gap:8px">${d.sujeitoST?'<span class="pill acc">sujeito a ST</span>':'<span class="pill neu">não sujeito a ST</span>'}<b>${esc(d.segmento||"")}</b></div>
+   <div class="muted">${esc(d.enquadramento||"")}</div>
+   <div class="summary">
+     <div><div class="label">IVA original</div><div class="v">${pct(num(d.ivaOriginal))}</div></div>
+     <div><div class="label">IVA ajustado</div><div class="v accent">${pct(num(d.ivaAjustado))}</div></div>
+     <div><div class="label">Alíq. interna</div><div class="v">${pct(num(d.aliquotaInterna))}</div></div>
+     <div><div class="label">Redução BC</div><div class="v">${pct(num(d.reducaoBC))}</div></div>
+     <div><div class="label">FCP</div><div class="v">${pct(num(d.fcp))}</div></div>
+   </div>
+   <div><div class="label">Recomendação</div>${esc(d.regraRecomendada||"")}</div>
+   ${d.calculoExemplo?`<div class="formula">${esc(d.calculoExemplo)}</div>`:""}
+   <div><div class="label">Fundamentação</div><ul class="steps">${li(d.fundamentacao)}</ul></div>
+   <div class="callout"><b>Validar antes de recolher:</b><ul class="steps" style="color:inherit">${li(d.pontosAValidar)}</ul></div>
+   <div class="row">${canEditRules&&d.sujeitoST?`<button class="primary" id="btnApplyAI">Criar regra com esta sugestão</button>`:""}<span class="faint" style="font-size:12px">Sugestão gerada pelo Claude sem consulta à internet — a regra entra como “não validada”.</span></div></div>`;
+  const b=$("#btnApplyAI"); if(b) b.onclick=()=>{
+    const aj=d.usarIvaJaAjustado!==false&&num(d.ivaAjustado)>0;
+    const r={id:"r"+Date.now().toString(36),uf:q.ufD,ncm:onlyDigits(q.ncm),cest:onlyDigits(q.cest),descricao:(q.desc||d.segmento||"").slice(0,60),mva:aj?num(d.ivaAjustado):num(d.ivaOriginal),aliqInterna:num(d.aliquotaInterna)||17,fcp:num(d.fcp),reducao:num(d.reducaoBC),ajustar:!aj,fonte:"Sugestão Claude ("+(d.confianca||"?")+"): "+(d.fundamentacao||[]).join("; ").slice(0,180),validada:false};
+    rules.push(r);saveRule(r);renderAll();toast("Regra criada como não validada");runLocal();
+  };
+}
+$("#btnAI").addEventListener("click",runAI);
+$("#btnAIStop").addEventListener("click",()=>aiCtl&&aiCtl.abort());
+document.addEventListener("click",e=>{const b=e.target.closest("[data-analyze]");if(!b)return;const x=PEND_ITEMS[+b.dataset.analyze];if(!x)return;fillQ(x.it,x.ufO,x.ufD);setTab("consulta");runLocal();runAI()});
+
+const safeId=s=>String(s).replace(/[^A-Za-z0-9_\-.~:@+]/g,"_").slice(0,190);
+
+function applyGate(){
+  $("#btnAddRule").hidden=!canEditRules;
+  const w=$("#gateNote"); w.hidden=canEditRules;
+  $$("#rulesTbl input, #cfgForm input, #cfgForm select").forEach(i=>i.disabled=!canEditRules);
+  $$("#rulesTbl [data-del]").forEach(b=>b.hidden=!canEditRules);
+}
+/* rules */
+const RCOLS=[["uf","UF dest.",60],["ncm","NCM (prefixo)",110],["cest","CEST",100],["descricao","Descrição",200],["mva","MVA %",70],["aliqInterna","Alíq. int. %",80],["fcp","FCP %",60],["reducao","Red. BC %",70],["ajustar","Ajusta MVA",70],["fonte","Base legal",160],["validada","Validada",70]];
+function renderRules(){
+  const t=$("#rulesTbl");
+  if(!rules.length){t.innerHTML=`<tr><td class="empty">Nenhuma regra. Clique em “Nova regra”.</td></tr>`;return}
+  if(t.contains(document.activeElement)&&document.activeElement.tagName==="INPUT")return; // não re-renderiza durante edição
+  const sorted=[...rules].sort((a,b)=>(a.uf+a.ncm).localeCompare(b.uf+b.ncm));
+  t.innerHTML=`<thead><tr>${RCOLS.map(c=>`<th style="min-width:${c[2]}px">${c[1]}</th>`).join("")}<th></th></tr></thead><tbody>`+
+  sorted.map(r=>`<tr data-id="${esc(r.id)}">${RCOLS.map(([k])=>(k==="ajustar"||k==="validada")?`<td style="text-align:center"><input type="checkbox" id="r-${esc(r.id)}-${k}" data-k="${k}" ${r[k]?"checked":""} aria-label="Ajustar MVA"></td>`:`<td><input class="cell" id="r-${esc(r.id)}-${k}" data-k="${k}" value="${esc(r[k]??"")}" aria-label="${k}"></td>`).join("")}<td><button class="ghost danger" data-del="${esc(r.id)}" aria-label="Excluir regra">excluir</button></td></tr>`).join("")+"</tbody>";
+}
+const NUMK=["mva","aliqInterna","fcp","reducao"];
+$("#rulesTbl").addEventListener("change",async e=>{
+  const inp=e.target.closest("[data-k]");if(!inp)return;const id=inp.closest("tr").dataset.id,k=inp.dataset.k;
+  let v=inp.type==="checkbox"?inp.checked:inp.value.trim(); if(NUMK.includes(k))v=num(v); if(k==="uf")v=String(v).toUpperCase();
+  const r=rules.find(x=>x.id===id); if(!r)return; r[k]=v; saveRule(r); renderAll();
+});
+$("#rulesTbl").addEventListener("click",async e=>{const b=e.target.closest("[data-del]");if(!b)return;
+  if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="confirmar?";setTimeout(()=>{b.dataset.confirm="";b.textContent="excluir"},3000);return}
+  const id=b.dataset.del;rules=rules.filter(r=>r.id!==id);if(dbReady){try{await db.doc("regras/"+id).delete()}catch(e){}}else lsSet("st_rules_v3",rules);renderAll()});
+async function saveRule(r){const {id,...data}=r;if(dbReady){try{await db.doc("regras/"+id).set(data)}catch(e){toast("Erro ao salvar regra: "+(e.code||e.message))}}else lsSet("st_rules_v3",rules)}
+function addRule(p={}){const uf=(p.uf||cfg.uf||"").toUpperCase();const lg=findLegal({ncm:p.ncm||"",cest:p.cest||""},uf);const ok=lg&&lg.cls!=="fora";
+  const r={id:"r"+Date.now().toString(36),uf,ncm:onlyDigits(p.ncm||"").slice(0,8),cest:onlyDigits(p.cest||""),descricao:p.descricao||"",mva:ok?lg.mva:0,aliqInterna:ok?lg.aliq:(uf==="MT"?17:0),fcp:0,reducao:ok?lg.red:0,ajustar:false,fonte:ok?lg.fund.join(" | ").slice(0,480):"",validada:false};
+  rules.push(r);saveRule(r);renderAll();toast(ok?"Regra criada a partir da base legal — revise e marque como validada":"Regra criada como rascunho — só vale depois de preencher MVA e alíquota")}
+$("#btnAddRule").addEventListener("click",()=>addRule());
+
+function renderHist(){
+  const rows=Object.values(hist).sort((a,b)=>(b.emitidaEm||"").localeCompare(a.emitidaEm||""));
+  const tot=rows.reduce((a,r)=>a+(r.valor||0),0), pend=rows.filter(r=>r.status!=="paga").reduce((a,r)=>a+(r.valor||0),0);
+  $("#histTotal").innerHTML=rows.length?`Total R$ <span class="mono">${fmt(tot)}</span> · a pagar R$ <span class="mono">${fmt(pend)}</span>`:"";
+  $("#histTbl").innerHTML=rows.length?`<thead><tr><th>Emitida</th><th>NF-e</th><th>UF</th><th>Receita</th><th>Fornecedor / cliente</th><th>Vencimento</th><th>Nº controle</th><th class="num">Valor</th><th>Status</th></tr></thead><tbody>`+
+    rows.map(r=>`<tr><td class="mono">${brDate(r.emitidaEm)}</td><td class="mono">${esc(r.nNF)}</td><td class="mono">${esc(r.uf)}</td><td class="mono">${esc(r.receita)} <span class="faint">${esc(r.tipo)}</span></td><td>${esc(r.emitente)}</td><td class="mono">${brDate(r.vencimento)}</td><td class="mono" style="word-break:break-all">${esc(r.controle)||"—"}</td><td class="num">${fmt(r.valor)}</td><td><span class="pill ${r.status==="paga"?"ok":"acc"}">${esc(r.status)}</span></td></tr>`).join("")+"</tbody>"
+    :`<tr><td class="empty">Nenhuma guia registrada ainda.</td></tr>`;
+}
+
+/* config */
+const CFG_FIELDS=[["responsavel","Responsável pela memória de cálculo (PDF)"],["razao","Razão social"],["cnpj","CNPJ"],["ie","Inscrição estadual"],["uf","UF","uf"],["endereco","Endereço"],["municipio","Município"],["cep","CEP"],["fone","Telefone"],
+  ["receitaLocal","Receita DAR (UF própria) — ICMS-ST entradas"],["receitaLocalFCP","Receita DAR (UF própria) — FCP"],["portalLocal","Portal SEFAZ da UF própria"],["codMunSefaz","Cód. município SEFAZ (DAR campo 20)"],["conv5291ok","NCMs confirmados no Conv. 52/91 (separe por vírgula)"],["filiais","Filiais: CNPJ=cód. município SEFAZ (separe por ;)"],
+  ["receitaST","Receita GNRE — ICMS-ST"],["receitaFCP","Receita GNRE — FCP-ST"],["tipoDoc","Tipo doc. origem (portal)"],["fcpSeparado","FCP em guia separada","bool"],
+  ["regimeMVA","Regime de MVA (Portaria 195/2019)","regime"],["ipiNaBase","IPI compõe a base ST","bool"],["freteNaBase","Frete compõe a base ST","bool"],["vencRegra","Vencimento","venc"],["diaVenc","Dia (mês seguinte)"]];
+function renderCfg(){
+  const f=$("#cfgForm"); if(f.contains(document.activeElement))return;
+  f.innerHTML=CFG_FIELDS.map(([k,l,t])=>{
+    const id="cfg-"+k;
+    if(t==="bool")return `<label class="field"><span class="label">${l}</span><span class="row" style="gap:6px"><input type="checkbox" id="${id}" data-c="${k}" ${cfg[k]?"checked":""}> sim</span></label>`;
+    if(t==="uf")return `<label class="field"><span class="label">${l}</span><select id="${id}" data-c="${k}"><option value="">—</option>${UFS.map(u=>`<option ${cfg[k]===u?"selected":""}>${u}</option>`).join("")}</select></label>`;
+    if(t==="regime")return `<label class="field" style="grid-column:1/-1"><span class="label">${l}</span><select id="${id}" data-c="${k}"><option value="nao_optante" ${(cfg[k]||"nao_optante")==="nao_optante"?"selected":""}>Não optante pelo crédito outorgado — art. 2º-B (ex.: autopeças 65,29%)</option><option value="optante" ${cfg[k]==="optante"?"selected":""}>Optante crédito outorgado ou Simples — Anexo Único (ex.: autopeças 50,39%, crédito limitado a 7%)</option><option value="atacadista" ${cfg[k]==="atacadista"?"selected":""}>Atacadista do art. 2º-A — MVA do Anexo Único com redução de 50%</option></select></label>`;
+    if(t==="venc")return `<label class="field"><span class="label">${l}</span><select id="${id}" data-c="${k}"><option value="hoje" ${cfg[k]==="hoje"?"selected":""}>No ato (data de hoje)</option><option value="dia" ${cfg[k]==="dia"?"selected":""}>Dia fixo do mês seguinte</option></select></label>`;
+    return `<label class="field"><span class="label">${l}</span><input id="${id}" data-c="${k}" value="${esc(cfg[k])}"></label>`}).join("");
+}
+$("#cfgForm").addEventListener("change",async e=>{
+  const i=e.target.closest("[data-c]");if(!i)return;const k=i.dataset.c;cfg[k]=i.type==="checkbox"?i.checked:i.value.trim();
+  lsSet("st_cfg",cfg);renderAll();
+  if(dbReady){try{await db.doc("config/empresa").set(cfg);$("#cfgSaved").textContent="Salvo"}catch(e){$("#cfgSaved").textContent="Salvo só neste navegador"}}else $("#cfgSaved").textContent="Salvo neste navegador";
+});
+
+/* ---------- memória de cálculo em PDF ---------- */
+const pdfTxt=s=>String(s??"").replace(/[→]/g,"->").replace(/[−]/g,"-").replace(/[“”]/g,'"').replace(/[‘’]/g,"'").replace(/[^\x00-\xFF—–•…ºª°]/g,"");
+async function memoriaPDF(noteId){
+  const n=notes.find(x=>x.id===noteId); if(!n){toast("Nota não encontrada");return}
+  if(!window.jspdf||!window.jspdf.jsPDF){toast("Gerador de PDF não carregou — recarregue a página");return}
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"});
+  const c=calcAll().find(x=>x.n.id===noteId), rows=c.rows, calcRows=rows.filter(isCalc);
+  const total=r2(rows.reduce((a,r)=>a+(r.icmsRaw||0),0)), fcpT=r2(rows.reduce((a,r)=>a+(r.fcpRaw||0),0));
+  const g=buildGuides([c])[0]; const W=297, M=12; let y=14;
+  const ink=[21,32,28], acc=[11,106,79], mute=[90,105,99];
+  doc.setFont("helvetica","bold");doc.setFontSize(15);doc.setTextColor(...ink);doc.text(pdfTxt("Memória de Cálculo — ICMS-ST (antecipação / complemento)"),M,y);
+  doc.setFont("helvetica","normal");doc.setFontSize(9);doc.setTextColor(...mute);
+  doc.text(pdfTxt(`${cfg.responsavel||""}${cfg.responsavel?" · ":""}emitida em ${new Date().toLocaleString("pt-BR")}`),W-M,y,{align:"right"}); y+=7;
+  const box=(x,yy,w,title,lines)=>{doc.setDrawColor(210,219,215);doc.roundedRect(x,yy,w,26,1.5,1.5);doc.setFont("helvetica","bold");doc.setFontSize(7.5);doc.setTextColor(...mute);doc.text(pdfTxt(title.toUpperCase()),x+3,yy+5);
+    doc.setFont("helvetica","normal");doc.setFontSize(8.3);doc.setTextColor(...ink);let k=0;lines.filter(Boolean).forEach(l=>{doc.splitTextToSize(pdfTxt(l),w-6).forEach(t=>{if(k<4)doc.text(t,x+3,yy+9.5+k*3.7);k++})});};
+  const bw=(W-2*M-8)/3;
+  box(M,y,bw,"Contribuinte (destinatário)",[onlyDigits(n.dest.cnpj).slice(0,8)===onlyDigits(cfg.cnpj).slice(0,8)&&cfg.razao?cfg.razao:n.dest.nome,`CNPJ ${fmtCnpj(n.dest.cnpj)} · IE ${n.dest.ie}`,`${n.dest.mun}/${n.dest.uf}`]);
+  box(M+bw+4,y,bw,"Documento fiscal",[`NF-e ${n.nNF} série ${n.serie} · emissão ${brDate(n.dhEmi)}`,`Fornecedor: ${n.emit.nome}`,`CNPJ ${fmtCnpj(n.emit.cnpj)} · ${n.emit.mun}/${n.emit.uf} · Valor NF R$ ${fmt(n.vNF)}`]);
+  box(M+2*(bw+4),y,bw,"Guia de recolhimento",[g?`${g.guia} · receita ${g.receita||"—"} · período ${g.periodo}`:"Sem valor a recolher",g?`Vencimento ${brDate(g.venc)}`:"",`Regime de MVA: ${({nao_optante:"não optante crédito outorgado (art. 2º-B)",optante:"optante / Simples (Anexo Único)",atacadista:"atacadista (art. 2º-A)"})[cfg.regimeMVA||"nao_optante"]}`]);
+  y+=30; doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(...mute);doc.text(pdfTxt("Chave de acesso: "+n.chave.replace(/(\d{4})/g,"$1 ").trim()),M,y); y+=4;
+  const body=rows.map(r=>{const it=r.it, d=isCalc(r); const vi=r.bcOp||0;
+    return [it.nItem,pdfTxt(it.xProd).slice(0,46),ncmFmt(onlyDigits(it.ncm)),cestFmt(onlyDigits(it.cest))||"—",it.cfop,d?fmt(vi):"—",d?pct(r.mvaAp*100):"—",d?pct(num(r.rule.reducao)):"—",d?fmt(r.bcST):"—",d?pct(num(r.rule.aliqInterna)):"—",d?fmt(r.bcST*num(r.rule.aliqInterna)/100):"—",d?fmt(r.proprio):"—",r.stRetida?fmt(r.stRetida):(d?"0,00":"—"),d?fmt(r.icmsRaw):({fora:"sem ST",retida:"retida",semregra:"sem regra"}[r.status]||"—")]});
+  doc.autoTable({startY:y,margin:{left:M,right:M},head:[["It.","Descrição","NCM","CEST","CFOP","Valor do item¹","MVA","Red. BC","BC ST","Alíq.","ICMS ST","(-) ICMS próprio","(-) ST retida","A recolher"]],body,
+    foot:[["","","","","","","","","","","","","Total",fmt(total)]],theme:"grid",styles:{font:"helvetica",fontSize:7.6,cellPadding:1.4,textColor:ink,lineColor:[210,219,215]},headStyles:{fillColor:acc,textColor:255,fontStyle:"bold"},footStyles:{fillColor:[216,238,230],textColor:ink,fontStyle:"bold"},
+    columnStyles:{0:{cellWidth:8},1:{cellWidth:62},5:{halign:"right"},6:{halign:"right"},7:{halign:"right"},8:{halign:"right"},9:{halign:"right"},10:{halign:"right"},11:{halign:"right"},12:{halign:"right"},13:{halign:"right",fontStyle:"bold"}}});
+  y=doc.lastAutoTable.finalY+5;
+  doc.setFontSize(8);doc.setTextColor(...mute);
+  const fx=[`¹ Valor do item = valor dos produtos + IPI + frete + seguro + outras despesas − desconto (${cfg.ipiNaBase?"IPI incluído":"sem IPI"}${cfg.freteNaBase?", frete incluído":", sem frete"}).`,
+    "BC ST = valor do item × (1 + MVA) × (1 − redução da BC).   ICMS ST = BC ST × alíquota interna.   A recolher = ICMS ST − ICMS próprio destacado na NF-e − ST retida pelo fornecedor.",
+    "Valores por item sem arredondamento intermediário; o total é arredondado ao centavo, como no DAR."];
+  fx.forEach(t=>{doc.text(pdfTxt(t),M,y);y+=3.8});
+  y+=2;
+  // fundamentação
+  const fundSet=[]; calcRows.forEach(r=>{const f=r.legal?r.legal.fund:String(r.rule.fonte||"").split(" | ").filter(Boolean); f.forEach(x=>{if(!fundSet.includes(x))fundSet.push(x)})});
+  if(calcRows.some(r=>r.status==="complemento")) fundSet.push("Complemento: o fornecedor reteve ST com MVA inferior à aplicável ao destinatário não optante — Portaria SEFAZ-MT 195/2019, art. 2º-B, §1º (recolhimento da diferença).");
+  const obs=[]; rows.forEach(r=>{(r.legal?r.legal.conferir:[]).forEach(x=>{if(!obs.includes(x))obs.push(x)}); if(r.cfopAlert&&!obs.includes(r.cfopAlert))obs.push(r.cfopAlert)});
+  const normas=BASE?BASE.normas.filter(nm=>/art\. 1º, §1º|art\. 2º-B|art\. 3º|Anexo V|Anexo X/.test(nm.ref)):[];
+  const secs=[["Fundamentação legal aplicada",fundSet],["Normas de referência",normas.map(nm=>`${nm.ref}: ${nm.txt}`)]]; if(obs.length) secs.push(["Pontos de atenção",obs]);
+  for(const [t,list] of secs){ if(!list.length)continue; if(y>185){doc.addPage();y=16}
+    doc.setFont("helvetica","bold");doc.setFontSize(9.5);doc.setTextColor(...ink);doc.text(pdfTxt(t),M,y);y+=4.5;
+    doc.setFont("helvetica","normal");doc.setFontSize(8.2);doc.setTextColor(...ink);
+    for(const l of list){const lines=doc.splitTextToSize(pdfTxt("• "+l),W-2*M); if(y+lines.length*3.8>200){doc.addPage();y=16} doc.text(lines,M,y); y+=lines.length*3.8+0.8;} y+=2; }
+  if(y>188){doc.addPage();y=16}
+  doc.setFontSize(7.5);doc.setTextColor(...mute);
+  doc.text(pdfTxt(`Fonte da base legal: ${BASE?BASE.meta.fonte:"—"} — portal de legislação da SEFAZ-MT. Os textos oficiais são os publicados no Diário Oficial.`),M,y); y+=3.6;
+  if(g) doc.text(pdfTxt(`Total a recolher: R$ ${fmt(g.valor)} · ${g.guia} · receita ${g.receita} · referência NF-e ${String(n.nNF).padStart(9,"0")}${hist[g.id]&&hist[g.id].controle?" · DAR nº "+hist[g.id].controle:""}`),M,y);
+  const pages=doc.getNumberOfPages(); for(let i=1;i<=pages;i++){doc.setPage(i);doc.setFontSize(7);doc.setTextColor(...mute);doc.text(pdfTxt(`NF-e ${n.nNF} · ${n.dest.nome} · página ${i}/${pages}`),W-M,205,{align:"right"})}
+  const blob=doc.output("blob");
+  await saveFile(`MEMORIA DE CALCULO ICMS ST NF ${n.nNF} - ${pdfTxt(n.emit.nome).slice(0,30).replace(/[\\/:*?"<>|]/g,"")}.pdf`,blob);
+}
+
+/* backup */
+$("#btnBackup").addEventListener("click",()=>saveFile("backup-apurador-st-"+todayISO()+".json",JSON.stringify({versao:1,exportadoEm:new Date().toISOString(),cfg,rules,notes:notes.map(({_shared,...n})=>n),hist},null,1)));
+$("#backupIn").addEventListener("change",async e=>{const f=e.target.files[0];e.target.value="";if(!f)return;try{const d=JSON.parse(await f.text());
+  if(d.cfg){cfg={...DEFAULT_CFG,...d.cfg};lsSet("st_cfg",cfg);if(dbReady&&canEditRules)try{await db.doc("config/empresa").set(cfg)}catch(_){}}
+  (d.rules||[]).forEach(r=>{if(!rules.some(x=>x.id===r.id)){rules.push(r);saveRule(r)}});
+  (d.notes||[]).forEach(n=>{if(!notes.some(x=>x.id===n.id)){notes.push(n);pushNote(n)}}); sortNotes(); saveNotes();
+  for(const [id,h] of Object.entries(d.hist||{})){ if(!hist[id]){const {id:_i,...rec}=h; await saveHist(id,rec)} }
+  renderCfg();renderAll();toast("Backup importado");}catch(err){toast("Arquivo de backup inválido: "+err.message)}});
+
+/* import */
+let notesMigrated=false;
+function sortNotes(){notes.sort((a,b)=>(b.dhEmi||"").localeCompare(a.dhEmi||""))}
+function saveNotes(){lsSet("st_notes",notes)}
+async function pushNote(n){ if(!dbReady) return; try{ const {_shared,...clean}=n; await db.doc("notas/"+safeId(n.id)).set({nota:clean,importadaEm:new Date().toISOString()}); }catch(e){ toast("Nota salva só neste navegador: "+(e.code||e.message)); } }
+async function dropNote(id){ if(!dbReady) return; try{ await db.doc("notas/"+safeId(id)).delete(); }catch(e){} }
+async function importFiles(files){
+  let ok=0,err=[];
+  for(const f of files){try{const n=parseNFe(await f.text(),f.name);notes=notes.filter(x=>x.id!==n.id);notes.push(n);ok++;pushNote(n)}catch(e){err.push(f.name+": "+e.message)}}
+  sortNotes();saveNotes();const m=$("#importMsg");m.hidden=false;m.innerHTML=`${ok} nota(s) importada(s).`+(err.length?` <span style="color:var(--bad)">Falharam: ${esc(err.join("; "))}</span>`:"");renderAll();
+}
+$("#fileIn").addEventListener("change",e=>{importFiles([...e.target.files]);e.target.value=""});
+const drop=$("#drop");
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over")}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over")}));
+drop.addEventListener("drop",e=>importFiles([...e.dataTransfer.files].filter(f=>/xml$/i.test(f.name)||f.type.includes("xml"))));
+$("#btnClear").addEventListener("click",function(){if(this.dataset.confirm!=="1"){this.dataset.confirm="1";this.textContent="Confirmar limpeza?";setTimeout(()=>{this.dataset.confirm="";this.textContent="Limpar notas"},3000);return}notes=[];saveNotes();renderAll()});
+
+const EXAMPLE_XML=`<nfeProc versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe"><NFe xmlns="http://www.portalfiscal.inf.br/nfe"><infNFe Id="NFe43260990316407000204550010003127581967561551" versao="4.00"><ide><cUF>43</cUF><cNF>96756155</cNF><natOp>6.101-VENDA PRODUCAO ESTABELECIMENTO</natOp><mod>55</mod><serie>1</serie><nNF>312758</nNF><dhEmi>2026-09-11T08:10:00-03:00</dhEmi><dhSaiEnt>2026-09-11T08:10:00-03:00</dhSaiEnt><tpNF>1</tpNF><idDest>2</idDest><cMunFG>4310405</cMunFG><tpImp>1</tpImp><tpEmis>1</tpEmis><cDV>1</cDV><tpAmb>1</tpAmb><finNFe>1</finNFe><indFinal>0</indFinal><indPres>9</indPres><indIntermed>0</indIntermed><procEmi>0</procEmi><verProc>Rech 25.20j b1655</verProc></ide><emit><CNPJ>90316407000204</CNPJ><xNome>ROMAR F MANN &amp; CIA. LTDA.</xNome><xFant>ROMAR FILIAL</xFant><enderEmit><xLgr>R ANIZIO ARAUJO E SILVA</xLgr><nro>92</nro><xBairro>CENTRO</xBairro><cMun>4310405</cMun><xMun>INDEPENDENCIA</xMun><UF>RS</UF><CEP>98915000</CEP><cPais>1058</cPais><xPais>BRASIL</xPais><fone>5535394000</fone></enderEmit><IE>1980002417</IE><CRT>3</CRT></emit><dest><CNPJ>21174220000292</CNPJ><xNome>XINGU MAQUINAS AGRICOLAS LTDA</xNome><enderDest><xLgr>AV SUL</xLgr><nro>424</nro><xCpl>QUADRA: 13 LOT</xCpl><xBairro>SETOR H</xBairro><cMun>5107065</cMun><xMun>QUERENCIA</xMun><UF>MT</UF><CEP>78643000</CEP><cPais>1058</cPais><xPais>BRASIL</xPais><fone>6635291002</fone></enderDest><indIEDest>1</indIEDest><IE>135831695</IE><email>frederico.gasperi@xingumaquinas.com</email></dest><autXML><CPF>53360460006</CPF></autXML><det nItem="1"><prod><cProd>47818798</cProd><cEAN>7895823940250</cEAN><xProd>BARRA CENTRAL DA PLATAFORMA 47547951, 47818798 GTIN: 07895823940250 54001000592</xProd><NCM>84339090</NCM><CEST>0104501</CEST><cBenef>SEM CBENEF</cBenef><EXTIPI>01</EXTIPI><CFOP>6101</CFOP><uCom>PC</uCom><qCom>2.000</qCom><vUnCom>605.17</vUnCom><vProd>1210.34</vProd><cEANTrib>7895823940250</cEANTrib><uTrib>PC</uTrib><qTrib>2.000</qTrib><vUnTrib>605.17</vUnTrib><indTot>1</indTot><xPed>42110</xPed></prod><imposto><ICMS><ICMS20><orig>0</orig><CST>20</CST><modBC>3</modBC><pRedBC>41.4280</pRedBC><vBC>708.92</vBC><pICMS>7.0000</pICMS><vICMS>49.62</vICMS></ICMS20></ICMS><IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>1210.34</vBC><pIPI>2.6000</pIPI><vIPI>31.47</vIPI></IPITrib></IPI><PIS><PISAliq><CST>02</CST><vBC>1160.72</vBC><pPIS>2.3000</pPIS><vPIS>26.70</vPIS></PISAliq></PIS><COFINS><COFINSAliq><CST>02</CST><vBC>1160.72</vBC><pCOFINS>10.8000</pCOFINS><vCOFINS>125.36</vCOFINS></COFINSAliq></COFINS><IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib><gIBSCBS><vBC>1008.66</vBC><gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>1.01</vIBSUF></gIBSUF><gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>1.01</vIBS><gCBS><pCBS>0.9000</pCBS><vCBS>9.08</vCBS></gCBS></gIBSCBS></IBSCBS></imposto><infAdProd>O.C: 42110</infAdProd><vItem>1241.81</vItem></det><det nItem="2"><prod><cProd>47550259</cProd><cEAN>7895823945675</cEAN><xProd>BLOCO BRACO CENTRAL DA PLATAFORMA 47550259 GTIN: 07895823945675 5401126660</xProd><NCM>84339090</NCM><CEST>0104501</CEST><cBenef>SEM CBENEF</cBenef><CFOP>6101</CFOP><uCom>PC</uCom><qCom>6.000</qCom><vUnCom>242.90</vUnCom><vProd>1457.40</vProd><cEANTrib>7895823945675</cEANTrib><uTrib>PC</uTrib><qTrib>6.000</qTrib><vUnTrib>242.90</vUnTrib><indTot>1</indTot><xPed>42110</xPed></prod><imposto><ICMS><ICMS20><orig>0</orig><CST>20</CST><modBC>3</modBC><pRedBC>41.4280</pRedBC><vBC>853.63</vBC><pICMS>7.0000</pICMS><vICMS>59.75</vICMS></ICMS20></ICMS><IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>1457.40</vBC><pIPI>2.6000</pIPI><vIPI>37.89</vIPI></IPITrib></IPI><PIS><PISAliq><CST>02</CST><vBC>1397.65</vBC><pPIS>1.6500</pPIS><vPIS>23.06</vPIS></PISAliq></PIS><COFINS><COFINSAliq><CST>02</CST><vBC>1397.65</vBC><pCOFINS>7.6000</pCOFINS><vCOFINS>106.22</vCOFINS></COFINSAliq></COFINS><IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib><gIBSCBS><vBC>1268.37</vBC><gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>1.27</vIBSUF></gIBSUF><gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>1.27</vIBS><gCBS><pCBS>0.9000</pCBS><vCBS>11.42</vCBS></gCBS></gIBSCBS></IBSCBS></imposto><infAdProd>O.C: 42110</infAdProd><vItem>1495.29</vItem></det><det nItem="3"><prod><cProd>48004997</cProd><cEAN>7895823939452</cEAN><xProd>PISO PLATAFORMA DRAPER - LD 48004997 GTIN: 07895823939452 50009002333</xProd><NCM>84339090</NCM><CEST>0104501</CEST><cBenef>SEM CBENEF</cBenef><EXTIPI>01</EXTIPI><CFOP>6101</CFOP><uCom>PC</uCom><qCom>1.000</qCom><vUnCom>104.10</vUnCom><vProd>104.10</vProd><cEANTrib>7895823939452</cEANTrib><uTrib>PC</uTrib><qTrib>1.000</qTrib><vUnTrib>104.10</vUnTrib><indTot>1</indTot><xPed>42110</xPed></prod><imposto><ICMS><ICMS20><orig>0</orig><CST>20</CST><modBC>3</modBC><pRedBC>41.4280</pRedBC><vBC>60.97</vBC><pICMS>7.0000</pICMS><vICMS>4.27</vICMS></ICMS20></ICMS><IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>104.10</vBC><pIPI>2.6000</pIPI><vIPI>2.71</vIPI></IPITrib></IPI><PIS><PISAliq><CST>02</CST><vBC>99.83</vBC><pPIS>2.3000</pPIS><vPIS>2.30</vPIS></PISAliq></PIS><COFINS><COFINSAliq><CST>02</CST><vBC>99.83</vBC><pCOFINS>10.8000</pCOFINS><vCOFINS>10.78</vCOFINS></COFINSAliq></COFINS><IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib><gIBSCBS><vBC>86.75</vBC><gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>0.09</vIBSUF></gIBSUF><gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>0.09</vIBS><gCBS><pCBS>0.9000</pCBS><vCBS>0.78</vCBS></gCBS></gIBSCBS></IBSCBS></imposto><infAdProd>O.C: 42110</infAdProd><vItem>106.81</vItem></det><det nItem="4"><prod><cProd>48004995</cProd><cEAN>7895823935027</cEAN><xProd>PISO PLATAFORMA DRAPER - LE 48004995 GTIN: 07895823935027 50009002214</xProd><NCM>84339090</NCM><CEST>0104501</CEST><cBenef>SEM CBENEF</cBenef><EXTIPI>01</EXTIPI><CFOP>6101</CFOP><uCom>PC</uCom><qCom>1.000</qCom><vUnCom>104.10</vUnCom><vProd>104.10</vProd><cEANTrib>7895823935027</cEANTrib><uTrib>PC</uTrib><qTrib>1.000</qTrib><vUnTrib>104.10</vUnTrib><indTot>1</indTot><xPed>42110</xPed></prod><imposto><ICMS><ICMS20><orig>0</orig><CST>20</CST><modBC>3</modBC><pRedBC>41.4280</pRedBC><vBC>60.97</vBC><pICMS>7.0000</pICMS><vICMS>4.27</vICMS></ICMS20></ICMS><IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>104.10</vBC><pIPI>2.6000</pIPI><vIPI>2.71</vIPI></IPITrib></IPI><PIS><PISAliq><CST>02</CST><vBC>99.83</vBC><pPIS>2.3000</pPIS><vPIS>2.30</vPIS></PISAliq></PIS><COFINS><COFINSAliq><CST>02</CST><vBC>99.83</vBC><pCOFINS>10.8000</pCOFINS><vCOFINS>10.78</vCOFINS></COFINSAliq></COFINS><IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib><gIBSCBS><vBC>86.75</vBC><gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>0.09</vIBSUF></gIBSUF><gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>0.09</vIBS><gCBS><pCBS>0.9000</pCBS><vCBS>0.78</vCBS></gCBS></gIBSCBS></IBSCBS></imposto><infAdProd>O.C: 42110</infAdProd><vItem>106.81</vItem></det><det nItem="5"><prod><cProd>48031697</cProd><cEAN>7895823941936</cEAN><xProd>BRACO ACIONAMENTO CONJUNTO DE FACAS 48031697; 47767739; GTIN: 07895823941936 54011001460</xProd><NCM>84339090</NCM><CEST>0104501</CEST><cBenef>SEM CBENEF</cBenef><EXTIPI>01</EXTIPI><CFOP>6101</CFOP><uCom>PC</uCom><qCom>1.000</qCom><vUnCom>1052.90</vUnCom><vProd>1052.90</vProd><cEANTrib>7895823941936</cEANTrib><uTrib>PC</uTrib><qTrib>1.000</qTrib><vUnTrib>1052.90</vUnTrib><indTot>1</indTot><xPed>42110</xPed></prod><imposto><ICMS><ICMS20><orig>0</orig><CST>20</CST><modBC>3</modBC><pRedBC>41.4280</pRedBC><vBC>616.70</vBC><pICMS>7.0000</pICMS><vICMS>43.17</vICMS></ICMS20></ICMS><IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>1052.90</vBC><pIPI>2.6000</pIPI><vIPI>27.38</vIPI></IPITrib></IPI><PIS><PISAliq><CST>02</CST><vBC>1009.73</vBC><pPIS>2.3000</pPIS><vPIS>23.22</vPIS></PISAliq></PIS><COFINS><COFINSAliq><CST>02</CST><vBC>1009.73</vBC><pCOFINS>10.8000</pCOFINS><vCOFINS>109.05</vCOFINS></COFINSAliq></COFINS><IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib><gIBSCBS><vBC>877.46</vBC><gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>0.88</vIBSUF></gIBSUF><gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>0.88</vIBS><gCBS><pCBS>0.9000</pCBS><vCBS>7.90</vCBS></gCBS></gIBSCBS></IBSCBS></imposto><infAdProd>O.C: 42110</infAdProd><vItem>1080.28</vItem></det><det nItem="6"><prod><cProd>47484097</cProd><cEAN>7895823944500</cEAN><xProd>CARCACA CAIXA DE NAVALHA 47484097 GTIN: 07895823944500 5400125325</xProd><NCM>84339090</NCM><CEST>0104501</CEST><cBenef>SEM CBENEF</cBenef><CFOP>6101</CFOP><uCom>PC</uCom><qCom>1.000</qCom><vUnCom>4214.19</vUnCom><vProd>4214.19</vProd><cEANTrib>7895823944500</cEANTrib><uTrib>PC</uTrib><qTrib>1.000</qTrib><vUnTrib>4214.19</vUnTrib><indTot>1</indTot><xPed>42110</xPed></prod><imposto><ICMS><ICMS20><orig>0</orig><CST>20</CST><modBC>3</modBC><pRedBC>41.4280</pRedBC><vBC>2468.34</vBC><pICMS>7.0000</pICMS><vICMS>172.78</vICMS></ICMS20></ICMS><IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>4214.19</vBC><pIPI>2.6000</pIPI><vIPI>109.57</vIPI></IPITrib></IPI><PIS><PISAliq><CST>02</CST><vBC>4041.41</vBC><pPIS>2.3000</pPIS><vPIS>92.95</vPIS></PISAliq></PIS><COFINS><COFINSAliq><CST>02</CST><vBC>4041.41</vBC><pCOFINS>10.8000</pCOFINS><vCOFINS>436.47</vCOFINS></COFINSAliq></COFINS><IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib><gIBSCBS><vBC>3511.99</vBC><gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>3.51</vIBSUF></gIBSUF><gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>3.51</vIBS><gCBS><pCBS>0.9000</pCBS><vCBS>31.61</vCBS></gCBS></gIBSCBS></IBSCBS></imposto><infAdProd>O.C: 42110</infAdProd><vItem>4323.76</vItem></det><total><ICMSTot><vBC>4769.53</vBC><vICMS>333.86</vICMS><vICMSDeson>0.00</vICMSDeson><vFCP>0.00</vFCP><vBCST>0.00</vBCST><vST>0.00</vST><vFCPST>0.00</vFCPST><vFCPSTRet>0.00</vFCPSTRet><vProd>8143.03</vProd><vFrete>0.00</vFrete><vSeg>0.00</vSeg><vDesc>0.00</vDesc><vII>0.00</vII><vIPI>211.73</vIPI><vIPIDevol>0.00</vIPIDevol><vPIS>170.53</vPIS><vCOFINS>798.66</vCOFINS><vOutro>0.00</vOutro><vNF>8354.76</vNF></ICMSTot><IBSCBSTot><vBCIBSCBS>6839.98</vBCIBSCBS><gIBS><gIBSUF><vDif>0.00</vDif><vDevTrib>0.00</vDevTrib><vIBSUF>6.85</vIBSUF></gIBSUF><gIBSMun><vDif>0.00</vDif><vDevTrib>0.00</vDevTrib><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>6.85</vIBS><vCredPres>0.00</vCredPres><vCredPresCondSus>0.00</vCredPresCondSus></gIBS><gCBS><vDif>0.00</vDif><vDevTrib>0.00</vDevTrib><vCBS>61.57</vCBS><vCredPres>0.00</vCredPres><vCredPresCondSus>0.00</vCredPresCondSus></gCBS></IBSCBSTot><vNFTot>8354.76</vNFTot></total><transp><modFrete>1</modFrete><transporta><CNPJ>05423509000160</CNPJ><xNome>LOPES &amp; OLIVEIRA TRANSPORTES E T</xNome><IE>0250101602</IE><xEnder>R ALFREDO OSCAR KOCHEMBORGER,155/PREDIO</xEnder><xMun>CARAZINHO</xMun><UF>RS</UF></transporta><vol><qVol>3</qVol><esp>REF. 14</esp><marca>CX PAP ONDULADO 208</marca><pesoL>22.962</pesoL><pesoB>22.962</pesoB></vol></transp><cobr><fat><nFat>000312758</nFat><vOrig>8354.76</vOrig><vDesc>0.00</vDesc><vLiq>8354.76</vLiq></fat><dup><nDup>001</nDup><dVenc>2026-10-11</dVenc><vDup>2926.76</vDup></dup><dup><nDup>002</nDup><dVenc>2026-11-10</dVenc><vDup>2714.00</vDup></dup><dup><nDup>003</nDup><dVenc>2026-12-10</dVenc><vDup>2714.00</vDup></dup></cobr><pag><detPag><indPag>1</indPag><tPag>15</tPag><vPag>8354.76</vPag></detPag></pag><infAdic><infCpl>OC: 42110 Representante: RPM REPRES.DE PEC.DE MAQS.EIRELI  CBS 61.57 IBS 6.85</infCpl><obsCont xCampo="Emitido pelo"><xTexto>ERP SIGER</xTexto></obsCont><obsCont xCampo="Rech Informatica"><xTexto>51 3582.4001 - www.rech.com.br</xTexto></obsCont><obsCont xCampo="CODNOT"><xTexto>0243017</xTexto></obsCont><obsCont xCampo="FATPEN"><xTexto>000312758;3;000;1;</xTexto></obsCont><obsCont xCampo="Fones"><xTexto>Fone: (55)3539.4000</xTexto></obsCont><obsCont xCampo="GY-EEM"><xTexto>vendas@rfmann.com.br</xTexto></obsCont></infAdic><compra><xPed>42110</xPed></compra><infRespTec><CNPJ>93419380000184</CNPJ><xContato>Cleber Fabiano Sesterheim</xContato><email>controladoria@rech.com.br</email><fone>5135824001</fone></infRespTec></infNFe></NFe><protNFe versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe"><infProt><tpAmb>1</tpAmb><verAplic>RS2609090815DR</verAplic><chNFe>43260990316407000204550010003127581967561551</chNFe><dhRecbto>2026-09-11T08:10:18-03:00</dhRecbto><nProt>243260392517802</nProt><digVal>MmZBNW6gSI0VeP0Vbgn9mKTUXzU=</digVal><cStat>100</cStat><xMotivo>Autorizado o uso da NF-e</xMotivo></infProt></protNFe></nfeProc>`;
+function loadExample(){const n=parseNFe(EXAMPLE_XML,"exemplo.xml");notes=notes.filter(x=>x.id!==n.id);notes.push(n);saveNotes();renderAll()}
+$("#btnExample").addEventListener("click",loadExample);
+
+/* exports */
+async function saveFile(filename,data){
+  let dl=null;try{dl=!window.__SITE&&window.claude&&window.claude.use?await window.claude.use("downloads"):null}catch(e){}
+  if(!dl){ if(window.__STANDALONE||window.__SITE){ const blob=data instanceof Blob?data:new Blob([data],{type:/\.csv$/.test(filename)?"text/csv":"application/octet-stream"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=filename; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000); toast("Arquivo salvo: "+filename); return }
+    if(typeof data==="string"){copy(data);toast("Download indisponível aqui — conteúdo copiado")}else toast("Download indisponível nesta visualização");return}
+  try{await dl.save({filename,data})}catch(e){if(e.code!=="declined")toast("Não foi possível salvar: "+(e.message||e.code))}
+}
+$("#btnXlsx").addEventListener("click",async()=>{
+  if(!window.XLSX){toast("Biblioteca da planilha não carregou — use o CSV");return}
+  const H=["Nome Emit.","UF Emitente","IE Dest.","Nome Dest.","UF Dest.","Núm. Nota","Data Emi.","Descr. Item","NCM","CFOP","Alíq. ICMS","Unidade","Quantidade","Vl. Unitário","VL. Total","VL. IPI","VL. Frete","VL. Seguro","VL. Desconto","Vl. Outros","VL. Líquido","Base ICMS","Perc. Redução","VL. ICMS","IVA","Alíq. ICMS S.T.","Base ICMS S.T.","VL. ICMS S.T.","VALOR TOTAL DO ITEM","IVA CORRETO","REDUÇÃO","BASE ICMS ST","REDUCAO","VALOR ICMS ST","DIFERENÇA A RECOLHER"];
+  const aoa=[[],H]; const calc=calcAll(); let row=3; const first=3;
+  for(const {n,rows} of calc) for(const r of rows){ if(!isCalc(r))continue; const it=r.it;
+    aoa.push([n.emit.nome,n.emit.uf,n.dest.ie,n.dest.nome,n.dest.uf,n.nNF,new Date(n.dhEmi.slice(0,10)+"T12:00:00"),it.xProd,it.ncm,it.cfop,it.pICMS,it.uCom,it.qCom,r2(it.vProd/(it.qCom||1)),it.vProd,it.vIPI,cfg.freteNaBase?it.vFrete:0,it.vSeg,it.vDesc,it.vOutro,r2(it.vProd-it.vDesc),it.vBC,it.pRedBC||0,it.vICMS,it.pMVAST||0,num(r.rule.aliqInterna)/100,it.vBCST||0,it.vICMSST,
+      {f:`O${row}+P${row}+Q${row}+R${row}+T${row}-S${row}`},Math.round(r.mvaAp*10000)/10000,Math.round((1-num(r.rule.reducao)/100)*10000)/10000,{f:`AC${row}*AD${row}+AC${row}`},{f:`AF${row}*AE${row}`},{f:`AG${row}*Z${row}`},{f:`AH${row}-X${row}-AB${row}`}]);
+    row++; }
+  if(row===first){toast("Nenhum item calculado para exportar");return}
+  aoa.push([]); const tr=row+1; const t=[];t[33]="TOTAL ST A RECOLHER = ";t[34]={f:`SUM(AI${first}:AI${row-1})`};aoa.push(t);
+  aoa[0][34]={f:`SUM(AI${first}:AI${row-1})`};
+  const ws=XLSX.utils.aoa_to_sheet(aoa,{cellDates:true});
+  for(let rr=first;rr<row;rr++){ ["G"].forEach(c=>{const x=ws[c+rr];if(x)x.z="dd/mm/yyyy"}); ["N","O","P","Q","R","S","T","U","V","X","AC","AF","AG","AH","AI"].forEach(c=>{const x=ws[c+rr];if(x)x.z="#,##0.00"}); }
+  ws["!cols"]=H.map((h,i)=>({wch:i===7||i===0||i===3?34:Math.max(10,h.length+2)}));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Antecipação ST");
+  const buf=XLSX.write(wb,{bookType:"xlsx",type:"array"});
+  const nfs=[...new Set(calc.filter(c=>c.rows.some(r=>isCalc(r))).map(c=>c.n.nNF))].join("-");
+  await saveFile(`ANTECIPACAO ICMS ST NF ${nfs}.xlsx`,new Blob([buf]));
+});
+$("#btnCsv").addEventListener("click",()=>{
+  const L=[["NF-e","Chave","UF orig","UF dest","Item","Produto","NCM","CEST","CFOP","Situação","Base op","Alíq inter","MVA orig","MVA aplic","BC ST","Alíq int","ICMS próprio","ICMS-ST","FCP-ST"].join(";")];
+  const f=v=>String(v).replace(".",",");
+  calcAll().forEach(({n,rows})=>rows.forEach(r=>{const it=r.it,d=isCalc(r);L.push([n.nNF,n.chave,r.ufO,r.ufD,it.nItem,'"'+it.xProd.replace(/"/g,"'")+'"',it.ncm,it.cest,it.cfop,r.status,d?f(r2(r.bcOp)):"",d&&r.inter!=null?f(r.inter):"",d?f(num(r.rule.mva)):"",d?f(r2(r.mvaAp*10000)/100):"",d?f(r.bcST):"",d?f(num(r.rule.aliqInterna)):"",d?f(r.proprio):"",d?f(r.icmsST):f(it.vICMSST),d?f(r.fcpST):""].join(";"))}));
+  saveFile("memoria-calculo-st-"+todayISO()+".csv","﻿"+L.join("\n"));
+});
+$("#btnJson").addEventListener("click",()=>{const gs=buildGuides(calcAll()).filter(g=>!hist[g.id]);saveFile("guias-gnre-"+todayISO()+".json",JSON.stringify(gs.map(guideJson),null,2))});
+
+/* boot */
+hist=lsGet("st_hist",{});
+renderCfg();
+sortNotes(); renderAll();
+try{const t=localStorage.getItem("st_tab");if(t)setTab(t)}catch(e){}
+initDb();
+loadBase();
+})();
+</script>
+<script>
+(function(){
+  const gate=document.getElementById("loginGate");
+  if(window.__SITE_ERR){ gate.hidden=false; document.getElementById("lgForm").hidden=true; const m=document.getElementById("lgMsg"); m.textContent=window.__SITE_ERR; m.className="msg err"; return; }
+  window.__siteBoot();
+  window.addEventListener("site-login",()=>{
+    const u=window.__siteUser;
+    const line=document.getElementById("dbStatus");
+    if(line && !document.getElementById("btnSair")) line.insertAdjacentHTML("afterend",`<div class="company" style="font-size:11px">${u.papel==="admin"?"administrador":"operador"} · <button id="btnSair" class="ghost" style="padding:0 4px;font-size:11px">sair</button></div>`);
+    document.getElementById("btnSair").onclick=window.__siteLogout;
+    if(u.papel==="admin") renderUsers();
+  });
+  async function renderUsers(){
+    const host=document.querySelector('[data-view="config"]'); if(!host) return;
+    let panel=document.getElementById("usersPanel");
+    if(!panel){ host.insertAdjacentHTML("beforeend",`<div class="panel" id="usersPanel" style="margin-top:18px"><div class="panel-h"><div><h2>Usuários</h2><div class="muted" style="font-size:13px">Para incluir alguém: Supabase → Authentication → Users → Add user. Ele aparece aqui como operador.</div></div></div><div class="tbl-wrap"><table id="usersTbl"></table></div></div>`); panel=document.getElementById("usersPanel"); }
+    const {data,error}=await window.__sb.from("membros").select("user_id,email,nome,papel,criado_em").order("email");
+    const t=document.getElementById("usersTbl");
+    if(error){ t.innerHTML=`<tr><td>${error.message}</td></tr>`; return; }
+    t.innerHTML=`<thead><tr><th>E-mail</th><th>Nome</th><th>Papel</th><th>Desde</th></tr></thead><tbody>`+data.map(m=>`<tr><td class="mono">${m.email||""}</td><td><input class="cell" data-u="${m.user_id}" data-f="nome" value="${(m.nome||"").replace(/"/g,"&quot;")}" aria-label="Nome"></td><td><select data-u="${m.user_id}" data-f="papel" ${m.user_id===window.__siteUser.id?"disabled":""}><option value="operador" ${m.papel==="operador"?"selected":""}>operador</option><option value="admin" ${m.papel==="admin"?"selected":""}>administrador</option></select></td><td class="mono">${(m.criado_em||"").slice(0,10).split("-").reverse().join("/")}</td></tr>`).join("")+"</tbody>";
+    t.onchange=async e=>{ const el=e.target.closest("[data-u]"); if(!el) return; const {error}=await window.__sb.from("membros").update({[el.dataset.f]:el.value}).eq("user_id",el.dataset.u); el.style.outline=error?"2px solid var(--bad)":"2px solid var(--ok)"; setTimeout(()=>el.style.outline="",1500); if(error) el.title=error.message; };
+  }
+})();
+</script>
+
+</body>
+</html>
