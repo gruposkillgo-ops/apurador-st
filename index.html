@@ -216,7 +216,7 @@ details summary{cursor:pointer;color:var(--ink2)}
     <button role="tab" data-tab="notas" aria-selected="true">Notas<span class="count" id="cNotas">0</span></button>
     <button role="tab" data-tab="calculo" aria-selected="false">Cálculo<span class="count" id="cItens">0</span></button>
     <button role="tab" data-tab="guias" aria-selected="false">Guias<span class="count" id="cGuias">0</span></button>
-    <button role="tab" data-tab="regras" aria-selected="false">Regras MVA<span class="count" id="cRegras">0</span></button>
+    <button role="tab" data-tab="regras" aria-selected="false"><span id="lblRegras">Regras MVA</span><span class="count" id="cRegras">0</span></button>
     <button role="tab" data-tab="consulta" aria-selected="false">Consulta NCM</button>
     <button role="tab" data-tab="base" aria-selected="false">Base legal<span class="count" id="cBase">…</span></button>
     <button role="tab" data-tab="historico" aria-selected="false">Histórico<span class="count" id="cHist">0</span></button>
@@ -241,6 +241,7 @@ details summary{cursor:pointer;color:var(--ink2)}
           <span class="muted">ou clique para escolher — vários arquivos de uma vez (nfeProc ou NFe)</span>
           <input type="file" id="fileIn" accept=".xml,text/xml" multiple hidden>
         </label>
+        <label class="row only-ba" style="gap:8px;font-size:13px" hidden>Mês de referência das notas que vou importar (entrada) <input type="month" id="refPerImp" style="padding:3px 6px"></label>
         <div id="importMsg" class="muted" hidden></div>
       </div>
       <div id="notesList"></div>
@@ -253,7 +254,7 @@ details summary{cursor:pointer;color:var(--ink2)}
     <div class="panel">
       <div class="panel-h"><h2>Memória de cálculo por item</h2>
         <div class="row">
-          <label class="row" style="gap:6px"><input type="checkbox" id="onlyST" checked> só itens com ST</label>
+          <label class="row" style="gap:6px"><input type="checkbox" id="onlyST" checked> <span id="lblOnly">só itens com ST</span></label>
           <button id="btnXlsx" class="primary">Planilha de antecipação (.xlsx)</button><button id="btnCsv">CSV</button>
         </div>
       </div>
@@ -261,7 +262,8 @@ details summary{cursor:pointer;color:var(--ink2)}
       <div class="panel-b">
         <details>
           <summary>Como o cálculo é feito</summary>
-          <div class="formula" style="margin-top:10px">
+          <div class="formula only-ba" style="margin-top:10px" hidden>Base = valor do item + IPI* − desconto<br>Alíquota = alíquota interna da BA (20,5%) ou carga reduzida do Conv. ICMS 52/91 (Anexo II: 5,6% · Anexo I: 8,8%), conforme o NCM<br>Antecipação = Base × alíquota<br>Diferença a recolher = Antecipação − ICMS destacado na NF-e (se negativa, zero)<br><span class="faint">* IPI/frete conforme a aba Empresa. Itens sujeitos à ST (Anexo 1 do RICMS-BA) ou com ST retida ficam fora — vão para a antecipação total.</span></div>
+          <div class="formula only-mt" style="margin-top:10px">
             Base operação = vProd + vFrete + vSeg + vOutro − vDesc + vIPI*<br>
             MVA ajustada = [(1 + MVA) × (1 − alíq. inter) ÷ (1 − alíq. interna)] − 1 &nbsp;(quando a regra pede ajuste e a operação é interestadual)<br>
             BC ST = Base operação × (1 + MVA aplicada) × (1 − redução BC)<br>
@@ -354,7 +356,7 @@ details summary{cursor:pointer;color:var(--ink2)}
       <div class="panel-h"><h2>Dados da empresa e parâmetros</h2><span class="muted" id="cfgSaved"></span></div>
       <div class="panel-b" style="display:grid;gap:18px">
         <div class="grid-form" id="cfgForm"></div>
-        <div class="row"><button id="btnBackup">Exportar backup (JSON)</button><label class="btn" for="backupIn">Importar backup</label><input type="file" id="backupIn" accept=".json,application/json" hidden><span class="muted" style="font-size:12px">Leva notas, guias registradas, regras e dados da empresa para outro computador.</span></div>
+        <div class="row"><button id="btnNovaEmp">+ Nova empresa</button><button id="btnBackup">Exportar backup (JSON)</button><label class="btn" for="backupIn">Importar backup</label><input type="file" id="backupIn" accept=".json,application/json" hidden><span class="muted" style="font-size:12px">Leva notas, guias registradas, regras e dados da empresa para outro computador.</span></div>
         <div class="callout info">O CNPJ da empresa define o sentido: se ela é a <b>destinatária</b> da nota, é antecipação/ST na entrada; se é a <b>emitente</b>, é ST na saída (você recolhe para a UF de destino).</div>
       </div>
     </div>
@@ -387,8 +389,11 @@ function copy(text,btn){
 /* ---------- state ---------- */
 const UFS="AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO".split(" ");
 const SUL_SE=["SP","RJ","MG","PR","SC","RS"];
-const DEFAULT_CFG={cnpj:"21174220000292",razao:"XINGU MAQUINAS AGRICOLAS LTDA",ie:"135831695",uf:"MT",endereco:"AV SUL, 424 QUADRA 13 LOTE 18 - SETOR H",municipio:"QUERÊNCIA",cep:"78643000",fone:"6635291002",ipiNaBase:true,freteNaBase:true,receitaST:"100048",receitaFCP:"100129",receitaLocal:"2817",receitaLocalFCP:"",portalLocal:"https://www.sefaz.mt.gov.br",codMunSefaz:"208000",campo23:"",regimeMVA:"nao_optante",conv5291ok:"84339090",responsavel:"Grupo Skill",filiais:"21174220000101=10006;21174220000292=208000;21174220000373=75000;21174220000454=89001",fcpSeparado:true,tipoDoc:"10",vencRegra:"hoje",diaVenc:9};
+const DEFAULT_CFG={modulo:"st_mt",cnpj:"21174220000292",razao:"XINGU MAQUINAS AGRICOLAS LTDA",ie:"135831695",uf:"MT",endereco:"AV SUL, 424 QUADRA 13 LOTE 18 - SETOR H",municipio:"QUERÊNCIA",cep:"78643000",fone:"6635291002",ipiNaBase:true,freteNaBase:true,receitaST:"100048",receitaFCP:"100129",receitaLocal:"2817",receitaLocalFCP:"",portalLocal:"https://www.sefaz.mt.gov.br",codMunSefaz:"208000",campo23:"",regimeMVA:"nao_optante",conv5291ok:"84339090",responsavel:"Grupo Skill",filiais:"21174220000101=10006;21174220000292=208000;21174220000373=75000;21174220000454=89001",fcpSeparado:true,tipoDoc:"10",vencRegra:"hoje",diaVenc:9};
 let cfg={...DEFAULT_CFG};
+const UNICAMPO_CFG={modulo:"antecipacao_ba",cnpj:"13373265000187",razao:"UNICAMPO - MAQUINAS E EQUIPAMENTOS AGRICOLAS LTDA",ie:"016895948",uf:"BA",endereco:"AVENIDA ENEDINO ALVES DA PA",bairro:"SANTA CRUZ",municipio:"LUIS EDUARDO MAGALHAES",cep:"47855244",fone:"",ipiNaBase:true,freteNaBase:false,receitaLocal:"2175",portalLocal:"https://www.sefaz.ba.gov.br/",codMunSefaz:"41802",vencRegra:"dia",diaVenc:25,aliqPadrao:20.5,responsavel:"Grupo Skill"};
+const BLANK_CFG={modulo:"antecipacao_ba",ipiNaBase:true,freteNaBase:false,receitaLocal:"2175",vencRegra:"dia",diaVenc:25,aliqPadrao:20.5};
+let empresas={}, empId="empresa";
 let rules=[];     // {id,uf,ncm,cest,descricao,mva,aliqInterna,fcp,reducao,ajustar,fonte}
 let notes=[];     // parsed NF-e
 let hist={};      // id -> guide record
@@ -405,6 +410,18 @@ function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
 notes=lsGet("st_notes",[]);
 cfg={...DEFAULT_CFG,...Object.fromEntries(Object.entries(lsGet("st_cfg",{})).filter(([k,v])=>v!==""))};
 rules=lsGet("st_rules_v3",null)||FALLBACK_RULES.slice();
+empresas=lsGet("st_empresas",null)||{empresa:{...cfg},"empresa-13373265":{...UNICAMPO_CFG}};
+empId=lsGet("st_emp","empresa");
+function cleanCfg(o){return Object.fromEntries(Object.entries(o||{}).filter(([k,v])=>v!==""))}
+function applyEmp(){ if(!empresas[empId]) empId=empresas.empresa?"empresa":(Object.keys(empresas)[0]||"empresa");
+  const base=empId==="empresa"?DEFAULT_CFG:(empId==="empresa-13373265"?UNICAMPO_CFG:BLANK_CFG);
+  cfg={...base,...cleanCfg(empresas[empId])}; if(!cfg.modulo)cfg.modulo=base.modulo||"st_mt";
+  lsSet("st_emp",empId); lsSet("st_cfg",cfg); }
+applyEmp();
+function isBA(){return cfg.modulo==="antecipacao_ba"}
+function rootOf(c){return onlyDigits(c).slice(0,8)}
+function notaDaEmpresa(n){const r=rootOf(cfg.cnpj);return !!r&&(rootOf(n.dest.cnpj)===r||rootOf(n.emit.cnpj)===r)}
+function notesAtivas(){return notes.filter(notaDaEmpresa)}
 
 function setDbStatus(ok){const el=$("#dbStatus");if(!el)return;el.textContent=ok?(window.__SITE?"● conectado · "+((window.__siteUser||{}).email||""):"● banco compartilhado conectado"):(window.__STANDALONE?"● versão offline — dados salvos neste computador":"● modo local (sem banco compartilhado)");el.style.color=ok?"var(--ok)":"var(--warn)";}
 async function initDb(){
@@ -418,7 +435,7 @@ async function initDb(){
   dbReady=true;
   if(window.__SITE){ canEditRules=!!(window.__siteUser&&window.__siteUser.papel==="admin"); applyGate(); }
   else { try{const u=await window.claude.use("user");if(u){canEditRules=await u.canEdit();applyGate();}}catch(e){} }
-  db.doc("config/empresa").onSnapshot(s=>{ if(s.exists){cfg={...DEFAULT_CFG,...Object.fromEntries(Object.entries(s.data()).filter(([k,v])=>v!==""))};lsSet("st_cfg",cfg);renderCfg();renderAll();} },()=>{});
+  db.collection("config").onSnapshot(s=>{ const e={}; s.docs.forEach(d=>{ if(/^empresa/.test(d.id)) e[d.id]=d.data() }); if(Object.keys(e).length){ empresas=e; lsSet("st_empresas",empresas); } applyEmp(); renderEmpSel(); renderCfg(); renderAll(); renderBase(); },()=>{});
   db.collection("regras").onSnapshot(s=>{ const r=s.docs.map(d=>({id:d.id,...d.data()})); rules=r.length?r:FALLBACK_RULES.slice(); lsSet("st_rules_v3",rules); renderAll(); },e=>{setDbStatus(false)});
   db.collection("notas").onSnapshot(s=>{ const remote=s.docs.map(d=>d.data().nota).filter(Boolean);
     const localOnly=notes.filter(n=>!remote.some(r=>r.id===n.id)&&!n._shared);
@@ -553,13 +570,14 @@ function calcItem(n,it){
   Object.assign(out,{status:retida?(raw>0.005?"complemento":"retida"):(out.legal?"legal":"ok"),bcOp,mvaAp,bcST:r2(bcST),proprio:r2(proprio),stRetida:retida?it.vICMSST:0,icmsRaw:raw,icmsST:r2(raw),fcpRaw:bcST*fcp,fcpST:r2(bcST*fcp)});
   return out;
 }
-const isCalc=r=>r.status==="ok"||r.status==="legal"||r.status==="complemento";
-function calcAll(){return notes.map(n=>({n,rows:n.items.map(it=>calcItem(n,it))}))}
+const isCalc=r=>r.status==="ok"||r.status==="legal"||r.status==="complemento"||r.status==="parcial";
+function calcAll(){return notesAtivas().map(n=>({n,rows:n.items.map(it=>isBA()?calcParcialBA(n,it):calcItem(n,it))}))}
 function nextDue(){
   if(cfg.vencRegra==="dia"){const d=new Date();const day=parseInt(cfg.diaVenc)||9;const x=new Date(d.getFullYear(),d.getMonth()+1,day);x.setMinutes(x.getMinutes()-x.getTimezoneOffset());return x.toISOString().slice(0,10)}
   return todayISO();
 }
 function buildGuides(calc){
+  if(isBA()) return buildGuidesBA(calc);
   const out=[];
   for(const {n,rows} of calc){
     const st=r2(rows.reduce((a,r)=>a+(r.icmsRaw||0),0)), fcp=r2(rows.reduce((a,r)=>a+(r.fcpRaw||0),0)); // arredonda só o total da nota, como no DAR
@@ -584,15 +602,15 @@ $("#tabs").addEventListener("click",e=>{const b=e.target.closest("button[data-ta
 function renderAll(){
   const calc=calcAll(), guides=buildGuides(calc);
   $("#lnkLocal").href=cfg.portalLocal||"#"; $("#lnkLocal").textContent="Portal SEFAZ-"+(cfg.uf||"UF")+" ↗";
-  $("#companyLine").innerHTML=cfg.razao?`<b>${esc(cfg.razao)}</b><br><span class="mono">${esc(fmtCnpj(cfg.cnpj))}</span> · ${esc(cfg.uf)}`:`<button class="ghost" data-go="config">Configurar empresa →</button>`;
-  $("#cNotas").textContent=notes.length;
+  renderEmpSel(); $$(".only-ba").forEach(x=>x.hidden=!isBA()); $$(".only-mt").forEach(x=>x.hidden=isBA()); $("#lblRegras").textContent=isBA()?"Regras BA":"Regras MVA"; $("#lblOnly").textContent=isBA()?"só itens da antecipação parcial":"só itens com ST";
+  $("#cNotas").textContent=notesAtivas().length;
   const allRows=calc.flatMap(c=>c.rows);
   $("#cItens").textContent=allRows.filter(r=>isCalc(r)).length;
   $("#cGuias").textContent=guides.filter(g=>!hist[g.id]).length;
-  $("#cRegras").textContent=rules.length;
+  $("#cRegras").textContent=rulesAtivas().length;
   $("#cHist").textContent=Object.keys(hist).length;
-  $("#btnClear").hidden=!notes.length;
-  renderPend(calc); renderNotes(calc); renderCalc(calc); renderGuides(guides); renderRules(); renderHist(); applyGate();
+  $("#btnClear").hidden=!notesAtivas().length;
+  if(isBA()){renderPendBA(calc);renderNotes(calc);renderCalcBA(calc);renderGuidesBA(guides)}else{renderPend(calc); renderNotes(calc); renderCalc(calc); renderGuides(guides);} renderRules(); renderHist(); applyGate();
 }
 document.addEventListener("click",e=>{const g=e.target.closest("[data-go]");if(g)setTab(g.dataset.go)});
 
@@ -606,8 +624,8 @@ function renderPend(calc){
   const conf={};calc.forEach(({n,rows})=>rows.filter(r=>r.legal&&r.legal.conferir.length).forEach(r=>{const k=r.it.ncm+"|"+r.it.cest;(conf[k]=conf[k]||{r,notas:new Set()}).notas.add(n.nNF)}));
   Object.values(conf).forEach(({r,notas})=>P.push({lvl:"warn",t:`${r.status==="fora"?"Sem ST no MT?":"Conferir enquadramento"}: NCM <span class="mono">${esc(r.it.ncm)}</span> CEST <span class="mono">${esc(r.it.cest||"—")}</span>`,d:`${esc(r.it.xProd.slice(0,60))} · NF ${[...notas].join(", ")} — ${r.legal.conferir.map(esc).join(" ")}`,a:(()=>{const i=PEND_ITEMS.push({it:r.it,ufO:r.ufO,ufD:r.ufD,legal:r.legal,status:r.status})-1; return `<div class="row">${canEditRules?(r.status==="fora"?`<button class="primary" data-semst="${i}">Confirmar: sem ST</button>`:`<button class="primary" data-okenq="${i}">Confirmar enquadramento</button>`):""}<button data-analyze="${i}">Analisar NCM</button></div>`})()}));
   if(!BASE)P.push({lvl:"bad",t:"Base legal do MT não carregou",d:esc(BASE_ERR||"carregando…")+" — itens sem regra cadastrada não serão calculados.",a:""});
-  rules.filter(r=>!r.semST&&(num(r.mva)<=0||num(r.aliqInterna)<=0)).forEach(r=>P.push({lvl:"warn",t:`Regra incompleta ${esc(r.uf)} · NCM <span class="mono">${esc(r.ncm)}</span> (rascunho, ignorada no cálculo)`,d:`${esc(r.descricao)} — preencha MVA e alíquota ou exclua. Enquanto isso vale a base legal.`,a:`<button data-go="regras">Abrir regras</button>`}));
-  rules.filter(r=>!r.validada&&(r.semST||num(r.mva)>0)).forEach(r=>P.push({lvl:"warn",t:`Validar regra ${esc(r.uf)} · NCM <span class="mono">${esc(r.ncm)}</span>: IVA ${pct(num(r.mva))}, redução ${pct(num(r.reducao))}`,d:`Conferir na legislação da UF. Fonte atual: ${esc(r.fonte||"—")}`,a:canEditRules?`<button data-validate="${esc(r.id)}">Marcar como validada</button>`:""}));
+  rulesAtivas().filter(r=>!r.semST&&(num(r.mva)<=0||num(r.aliqInterna)<=0)).forEach(r=>P.push({lvl:"warn",t:`Regra incompleta ${esc(r.uf)} · NCM <span class="mono">${esc(r.ncm)}</span> (rascunho, ignorada no cálculo)`,d:`${esc(r.descricao)} — preencha MVA e alíquota ou exclua. Enquanto isso vale a base legal.`,a:`<button data-go="regras">Abrir regras</button>`}));
+  rulesAtivas().filter(r=>!r.validada&&(r.semST||num(r.mva)>0)).forEach(r=>P.push({lvl:"warn",t:`Validar regra ${esc(r.uf)} · NCM <span class="mono">${esc(r.ncm)}</span>: IVA ${pct(num(r.mva))}, redução ${pct(num(r.reducao))}`,d:`Conferir na legislação da UF. Fonte atual: ${esc(r.fonte||"—")}`,a:canEditRules?`<button data-validate="${esc(r.id)}">Marcar como validada</button>`:""}));
   if(false)P.push({lvl:"warn",t:"DAR campo 23 (Inf. complementares) não configurado",d:"Na guia paga aparece “033/86.520.517-11”. Informe na aba Empresa se for fixo.",a:`<button data-go="config">Abrir Empresa</button>`});
   const recv=buildGuides(calc).filter(g=>!g.receita);
   if(recv.length)P.push({lvl:"bad",t:"Guia sem código de receita",d:"Configure o código na aba Empresa.",a:`<button data-go="config">Abrir Empresa</button>`});
@@ -622,7 +640,7 @@ $("#pendList")&&document.addEventListener("click",e=>{
 });
 function renderNotes(calc){
   const el=$("#notesList");
-  if(!notes.length){el.innerHTML=`<div class="empty" style="text-align:left;max-width:560px;margin:0 auto"><b>Como usar</b><ol class="steps" style="margin-top:6px"><li>Arraste os XMLs das NF-e de compra acima (de qualquer filial).</li><li>Confira os valores na aba <b>Cálculo</b> e resolva o que aparecer em <b>Pendências</b>.</li><li>Na aba <b>Guias</b>, copie os campos para o DAR no portal da SEFAZ-MT, emita e registre o número.</li><li>Baixe a <b>memória de cálculo em PDF</b> de cada nota para enviar ao cliente.</li></ol></div>`;return}
+  if(!calc.length){el.innerHTML=`<div class="empty" style="text-align:left;max-width:560px;margin:0 auto"><b>Como usar</b><ol class="steps" style="margin-top:6px"><li>Arraste os XMLs das NF-e de compra acima (de qualquer filial).</li><li>Confira os valores na aba <b>Cálculo</b> e resolva o que aparecer em <b>Pendências</b>.</li><li>Na aba <b>Guias</b>, copie os campos para o DAR no portal da SEFAZ-MT, emita e registre o número.</li><li>Baixe a <b>memória de cálculo em PDF</b> de cada nota para enviar ao cliente.</li></ol></div>`;return}
   el.innerHTML=calc.map(({n,rows})=>{
     const s=sentido(n), st=r2(rows.reduce((a,r)=>a+(r.icmsRaw||0)+(r.fcpRaw||0),0));
     const sem=rows.filter(r=>r.status==="semregra").length, ret=rows.filter(r=>r.status==="retida").length;
@@ -632,8 +650,8 @@ function renderNotes(calc){
         ${/EXEMPLO/i.test(n.emit.nome)?'<span class="pill warn">exemplo</span>':''}
         ${sem?`<span class="pill warn">${sem} sem regra</span>`:''}${ret?`<span class="pill neu">${ret} com ST retida</span>`:''}</div>
         <div class="muted">${esc(n.emit.nome)} <span class="mono">${esc(n.emit.uf)}</span> → ${esc(n.dest.nome)} <span class="mono">${esc(n.dest.uf)}</span> · ${brDate(n.dhEmi)} · ${n.items.length} itens · NF R$ ${fmt(n.vNF)}</div>
-        <div class="chave">${esc(n.chave)}</div></div>
-      <div style="text-align:right"><div class="label">ST + FCP</div><div class="mono" style="font-size:17px">R$ ${fmt(st)}</div>
+        <div class="chave">${esc(n.chave)}</div>${isBA()?`<label class="faint" style="font-size:12px">Mês de referência da antecipação <input type="month" data-refper="${esc(n.id)}" value="${esc(periodoBA(n))}" style="padding:2px 4px;font-size:12px"></label>`:""}</div>
+      <div style="text-align:right"><div class="label">${isBA()?"Antecipação parcial":"ST + FCP"}</div><div class="mono" style="font-size:17px">R$ ${fmt(st)}</div>
         <div class="row" style="justify-content:flex-end;gap:4px;margin-top:4px">${st>0?`<button data-pdf="${esc(n.id)}">Memória de cálculo (PDF)</button>`:""}<button class="ghost danger" data-rm="${esc(n.id)}">remover</button></div></div>
     </div>`}).join("");
 }
@@ -647,13 +665,13 @@ function renderCalc(calc){
   const all=calc.flatMap(c=>c.rows);
   const tot=k=>all.reduce((a,r)=>a+(r[k]||0),0);
   $("#sumBox").innerHTML=`
-    <div><div class="label">Notas</div><div class="v">${notes.length}</div></div>
+    <div><div class="label">Notas</div><div class="v">${calc.length}</div></div>
     <div><div class="label">Itens com ST calculada</div><div class="v">${all.filter(r=>isCalc(r)).length}</div></div>
     <div><div class="label">BC ST</div><div class="v">${fmt(tot("bcST"))}</div></div>
     <div><div class="label">ICMS-ST a recolher</div><div class="v accent">${fmt(r2(tot("icmsRaw")))}</div></div>
     <div><div class="label">FCP-ST</div><div class="v">${fmt(tot("fcpST"))}</div></div>
     <div><div class="label">Sem regra</div><div class="v" style="color:${all.some(r=>r.status==="semregra")?'var(--warn)':'inherit'}">${all.filter(r=>r.status==="semregra").length}</div></div>`;
-  if(!notes.length){$("#calcTbl").innerHTML=`<tr><td class="empty">Importe notas para ver o cálculo.</td></tr>`;return}
+  if(!calc.length){$("#calcTbl").innerHTML=`<tr><td class="empty">Importe notas para ver o cálculo.</td></tr>`;return}
   let h=`<thead><tr><th>Item</th><th>NCM / CEST</th><th>Situação</th><th class="num">Base op.</th><th class="num">Alíq. inter</th><th class="num">MVA orig.</th><th class="num">MVA aplic.</th><th class="num">BC ST</th><th class="num">Alíq. int.</th><th class="num">ICMS próprio</th><th class="num">ICMS-ST</th><th class="num">FCP-ST</th></tr></thead><tbody>`;
   for(const {n,rows} of calc){
     const vis=only?rows.filter(r=>r.status!=="retida"):rows;
@@ -678,7 +696,7 @@ const b=e.target.closest("[data-newrule]");if(!b)return;const [uf,ncm,cest,desc]
 function codMunFilial(cnpj){const m=String(cfg.filiais||"").split(/[;\n]+/).map(x=>x.split("=").map(s=>s.trim())).find(([c])=>onlyDigits(c)===onlyDigits(cnpj));return m?m[1]:(onlyDigits(cnpj)===onlyDigits(cfg.cnpj)?cfg.codMunSefaz:"")}
 function renderGuides(guides){
   const el=$("#guides");
-  if(!guides.length){el.innerHTML=`<div class="panel empty" style="grid-column:1/-1">Nenhuma guia com valor a recolher. ${notes.length?'Verifique itens sem regra na aba Cálculo.':'Importe notas primeiro.'}</div>`;return}
+  if(!guides.length){el.innerHTML=`<div class="panel empty" style="grid-column:1/-1">Nenhuma guia com valor a recolher. ${notesAtivas().length?'Verifique itens sem regra na aba Cálculo.':'Importe notas primeiro.'}</div>`;return}
   el.innerHTML=guides.map(g=>{
     const h=hist[g.id], n=g.n, s=sentido(n);
     const contrib=s==="entrada"?n.dest:n.emit;
@@ -727,6 +745,8 @@ $("#guides").addEventListener("click",async e=>{
 async function saveHist(id,rec){hist[id]={id,...rec};renderAll();if(dbReady){try{await db.doc("guias/"+safeId(id)).set(rec)}catch(e){toast("Não foi possível salvar no banco: "+(e.code||e.message))}}else lsSet("st_hist",hist)}
 async function delHist(id){delete hist[id];renderAll();if(dbReady){try{await db.doc("guias/"+safeId(id)).delete()}catch(e){}}else lsSet("st_hist",hist)}
 function renderBase(){
+  if(isBA()) return renderBaseBA();
+  { const sel=$("#baseSeg"); if(sel.dataset.mode==="BA"){sel.dataset.mode="";sel.innerHTML='<option value="">Todos os segmentos</option>'} }
   const cb=$("#cBase"); if(cb) cb.textContent=BASE?BASE.rows.length:"!";
   if(!BASE){$("#baseMeta").textContent=BASE_ERR?"Não foi possível carregar a base: "+BASE_ERR:"Carregando…";return}
   $("#baseMeta").innerHTML=`${esc(BASE.meta.fonte)} · ${BASE.rows.length} itens · extraído em ${brDate(BASE.meta.extraidoEm)} · <a href="${esc(BASE.meta.url)}" target="_blank" rel="noopener">texto oficial ↗</a>`;
@@ -767,7 +787,7 @@ function runLocal(){
   $("#localRes").hidden=false;
   $("#localHint").innerHTML=[seg?`Segmento CEST: <b>${esc(seg)}</b>`:(q.cest?"CEST fora da tabela de segmentos":"Sem CEST — item pode não estar sujeito a ST"),cv&&cv.anexo?`Carga origem ${pct(cv.ef)} → Conv. 52/91 ${esc(cv.anexo)}`:""].filter(Boolean).join(" · ");
   const lg=findLegal({ncm:q.ncm,cest:q.cest,pICMS:q.picms,pRedBC:q.red},q.ufD);
-  const legalCard=lg?(lg.cls==="fora"?`<div class="note-card"><div><div class="row" style="gap:8px"><span class="pill neu">sem ST no MT</span><b>Não consta na Portaria SEFAZ-MT 195/2019</b></div><div class="muted" style="font-size:13px">${lg.conferir.map(esc).join(" ")}</div></div><div></div></div>`
+  const legalCard=isBA()?baConsultaCard(q):lg?(lg.cls==="fora"?`<div class="note-card"><div><div class="row" style="gap:8px"><span class="pill neu">sem ST no MT</span><b>Não consta na Portaria SEFAZ-MT 195/2019</b></div><div class="muted" style="font-size:13px">${lg.conferir.map(esc).join(" ")}</div></div><div></div></div>`
     :`<div class="note-card" style="background:var(--accent-soft)"><div><div class="row" style="gap:8px"><span class="pill acc">base legal</span><b>MVA ${pct(lg.mva)} · alíq. ${pct(lg.aliq)} · redução BC ${pct(lg.red)}</b>${lg.conferir.length?'<span class="pill warn">conferir</span>':'<span class="pill ok">enquadrado</span>'}</div><ul class="steps" style="font-size:13px;margin-top:6px">${lg.fund.map(f=>`<li>${esc(f)}</li>`).join("")}${lg.conferir.map(f=>`<li style="color:var(--warn)">${esc(f)}</li>`).join("")}</ul></div>
       <div>${canEditRules?`<button class="primary" data-legalrule="1">Salvar como regra validada</button>`:""}</div></div>`):"";
   window.__lastLegal={lg,q};
@@ -861,15 +881,16 @@ function applyGate(){
 }
 /* rules */
 const RCOLS=[["uf","UF dest.",60],["ncm","NCM (prefixo)",110],["cest","CEST",100],["descricao","Descrição",200],["mva","MVA %",70],["aliqInterna","Alíq. int. %",80],["fcp","FCP %",60],["reducao","Red. BC %",70],["ajustar","Ajusta MVA",70],["semST","Sem ST",60],["fonte","Base legal",160],["validada","Validada",70]];
+const RCOLS_BA=[["uf","UF",50],["ncm","NCM (prefixo)",100],["cProd","Cód. produto",100],["cnpjEmit","Raiz CNPJ fornecedor",110],["ncmProprio","NCM próprio",100],["descricao","Descrição",200],["tipoBA","Tratamento (parcial / st)",120],["carga","Alíquota %",80],["fonte","Fundamento",220],["validada","Validada",70]];
 function renderRules(){
-  const t=$("#rulesTbl");
+  const t=$("#rulesTbl"), RC=isBA()?RCOLS_BA:RCOLS, rules=rulesAtivas();
   if(!rules.length){t.innerHTML=`<tr><td class="empty">Nenhuma regra. Clique em “Nova regra”.</td></tr>`;return}
   if(t.contains(document.activeElement)&&document.activeElement.tagName==="INPUT")return; // não re-renderiza durante edição
   const sorted=[...rules].sort((a,b)=>(a.uf+a.ncm).localeCompare(b.uf+b.ncm));
-  t.innerHTML=`<thead><tr>${RCOLS.map(c=>`<th style="min-width:${c[2]}px">${c[1]}</th>`).join("")}<th></th></tr></thead><tbody>`+
-  sorted.map(r=>`<tr data-id="${esc(r.id)}">${RCOLS.map(([k])=>(k==="ajustar"||k==="validada"||k==="semST")?`<td style="text-align:center"><input type="checkbox" id="r-${esc(r.id)}-${k}" data-k="${k}" ${r[k]?"checked":""} aria-label="Ajustar MVA"></td>`:`<td><input class="cell" id="r-${esc(r.id)}-${k}" data-k="${k}" value="${esc(r[k]??"")}" aria-label="${k}"></td>`).join("")}<td><button class="ghost danger" data-del="${esc(r.id)}" aria-label="Excluir regra">excluir</button></td></tr>`).join("")+"</tbody>";
+  t.innerHTML=`<thead><tr>${RC.map(c=>`<th style="min-width:${c[2]}px">${c[1]}</th>`).join("")}<th></th></tr></thead><tbody>`+
+  sorted.map(r=>`<tr data-id="${esc(r.id)}">${RC.map(([k])=>(k==="ajustar"||k==="validada"||k==="semST")?`<td style="text-align:center"><input type="checkbox" id="r-${esc(r.id)}-${k}" data-k="${k}" ${r[k]?"checked":""} aria-label="Ajustar MVA"></td>`:`<td><input class="cell" id="r-${esc(r.id)}-${k}" data-k="${k}" value="${esc(r[k]??"")}" aria-label="${k}"></td>`).join("")}<td><button class="ghost danger" data-del="${esc(r.id)}" aria-label="Excluir regra">excluir</button></td></tr>`).join("")+"</tbody>";
 }
-const NUMK=["mva","aliqInterna","fcp","reducao"];
+const NUMK=["mva","aliqInterna","fcp","reducao","carga"];
 $("#rulesTbl").addEventListener("change",async e=>{
   const inp=e.target.closest("[data-k]");if(!inp)return;const id=inp.closest("tr").dataset.id,k=inp.dataset.k;
   let v=inp.type==="checkbox"?inp.checked:inp.value.trim(); if(NUMK.includes(k))v=num(v); if(k==="uf")v=String(v).toUpperCase();
@@ -879,7 +900,8 @@ $("#rulesTbl").addEventListener("click",async e=>{const b=e.target.closest("[dat
   if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="confirmar?";setTimeout(()=>{b.dataset.confirm="";b.textContent="excluir"},3000);return}
   const id=b.dataset.del;rules=rules.filter(r=>r.id!==id);if(dbReady){try{await db.doc("regras/"+id).delete()}catch(e){}}else lsSet("st_rules_v3",rules);renderAll()});
 async function saveRule(r){const {id,...data}=r;if(dbReady){try{await db.doc("regras/"+id).set(data)}catch(e){toast("Erro ao salvar regra: "+(e.code||e.message))}}else lsSet("st_rules_v3",rules)}
-function addRule(p={}){const uf=(p.uf||cfg.uf||"").toUpperCase();const lg=findLegal({ncm:p.ncm||"",cest:p.cest||""},uf);const ok=lg&&lg.cls!=="fora";
+function addRule(p={}){ if(isBA()){const r={id:"ba-"+Date.now().toString(36),uf:"BA",ncm:onlyDigits(p.ncm||""),cProd:"",cnpjEmit:"",ncmProprio:"",descricao:p.descricao||"",tipoBA:"parcial",carga:num(cfg.aliqPadrao)||20.5,mva:0,aliqInterna:0,fcp:0,reducao:0,ajustar:false,fonte:"",validada:false};rules.push(r);saveRule(r);renderAll();toast("Regra BA criada — preencha NCM ou código do produto e valide");return}
+  const uf=(p.uf||cfg.uf||"").toUpperCase();const lg=findLegal({ncm:p.ncm||"",cest:p.cest||""},uf);const ok=lg&&lg.cls!=="fora";
   const r={id:"r"+Date.now().toString(36),uf,ncm:onlyDigits(p.ncm||"").slice(0,8),cest:onlyDigits(p.cest||""),descricao:p.descricao||"",mva:ok?lg.mva:0,aliqInterna:ok?lg.aliq:(uf==="MT"?17:0),fcp:0,reducao:ok?lg.red:0,ajustar:false,fonte:ok?lg.fund.join(" | ").slice(0,480):"",validada:false};
   rules.push(r);saveRule(r);renderAll();toast(ok?"Regra criada a partir da base legal — revise e marque como validada":"Regra criada como rascunho — só vale depois de preencher MVA e alíquota")}
 $("#btnAddRule").addEventListener("click",()=>addRule());
@@ -894,10 +916,10 @@ function renderHist(){
 }
 
 /* config */
-const CFG_FIELDS=[["responsavel","Responsável pela memória de cálculo (PDF)"],["razao","Razão social"],["cnpj","CNPJ"],["ie","Inscrição estadual"],["uf","UF","uf"],["endereco","Endereço"],["municipio","Município"],["cep","CEP"],["fone","Telefone"],
+const CFG_FIELDS=[["modulo","Tipo de apuração","modulo"],["responsavel","Responsável pela memória de cálculo (PDF)"],["razao","Razão social"],["cnpj","CNPJ"],["ie","Inscrição estadual"],["uf","UF","uf"],["endereco","Endereço"],["bairro","Bairro"],["municipio","Município"],["cep","CEP"],["fone","Telefone"],
   ["receitaLocal","Receita DAR (UF própria) — ICMS-ST entradas"],["receitaLocalFCP","Receita DAR (UF própria) — FCP"],["portalLocal","Portal SEFAZ da UF própria"],["codMunSefaz","Cód. município SEFAZ (DAR campo 20)"],["conv5291ok","NCMs confirmados no Conv. 52/91 (separe por vírgula)"],["filiais","Filiais: CNPJ=cód. município SEFAZ (separe por ;)"],
   ["receitaST","Receita GNRE — ICMS-ST"],["receitaFCP","Receita GNRE — FCP-ST"],["tipoDoc","Tipo doc. origem (portal)"],["fcpSeparado","FCP em guia separada","bool"],
-  ["regimeMVA","Regime de MVA (Portaria 195/2019)","regime"],["ipiNaBase","IPI compõe a base ST","bool"],["freteNaBase","Frete compõe a base ST","bool"],["vencRegra","Vencimento","venc"],["diaVenc","Dia (mês seguinte)"]];
+  ["regimeMVA","Regime de MVA (Portaria 195/2019)","regime"],["ipiNaBase","IPI compõe a base ST","bool"],["freteNaBase","Frete compõe a base ST","bool"],["vencRegra","Vencimento","venc"],["diaVenc","Dia (mês seguinte)"],["aliqPadrao","Alíquota interna padrão % (antecipação parcial BA)"]];
 function renderCfg(){
   const f=$("#cfgForm"); if(f.contains(document.activeElement))return;
   f.innerHTML=CFG_FIELDS.map(([k,l,t])=>{
@@ -905,19 +927,21 @@ function renderCfg(){
     if(t==="bool")return `<label class="field"><span class="label">${l}</span><span class="row" style="gap:6px"><input type="checkbox" id="${id}" data-c="${k}" ${cfg[k]?"checked":""}> sim</span></label>`;
     if(t==="uf")return `<label class="field"><span class="label">${l}</span><select id="${id}" data-c="${k}"><option value="">—</option>${UFS.map(u=>`<option ${cfg[k]===u?"selected":""}>${u}</option>`).join("")}</select></label>`;
     if(t==="regime")return `<label class="field" style="grid-column:1/-1"><span class="label">${l}</span><select id="${id}" data-c="${k}"><option value="nao_optante" ${(cfg[k]||"nao_optante")==="nao_optante"?"selected":""}>Não optante pelo crédito outorgado — art. 2º-B (ex.: autopeças 65,29%)</option><option value="optante" ${cfg[k]==="optante"?"selected":""}>Optante crédito outorgado ou Simples — Anexo Único (ex.: autopeças 50,39%, crédito limitado a 7%)</option><option value="atacadista" ${cfg[k]==="atacadista"?"selected":""}>Atacadista do art. 2º-A — MVA do Anexo Único com redução de 50%</option></select></label>`;
+    if(t==="modulo")return `<label class="field" style="grid-column:1/-1"><span class="label">${l}</span><select id="${id}" data-c="${k}"><option value="st_mt" ${cfg[k]!=="antecipacao_ba"?"selected":""}>ICMS-ST / antecipação com MVA — MT (Portaria 195/2019)</option><option value="antecipacao_ba" ${cfg[k]==="antecipacao_ba"?"selected":""}>ICMS antecipação parcial — BA (Lei 7.014/96, art. 12-A)</option></select></label>`;
     if(t==="venc")return `<label class="field"><span class="label">${l}</span><select id="${id}" data-c="${k}"><option value="hoje" ${cfg[k]==="hoje"?"selected":""}>No ato (data de hoje)</option><option value="dia" ${cfg[k]==="dia"?"selected":""}>Dia fixo do mês seguinte</option></select></label>`;
     return `<label class="field"><span class="label">${l}</span><input id="${id}" data-c="${k}" value="${esc(cfg[k])}"></label>`}).join("");
 }
 $("#cfgForm").addEventListener("change",async e=>{
   const i=e.target.closest("[data-c]");if(!i)return;const k=i.dataset.c;cfg[k]=i.type==="checkbox"?i.checked:i.value.trim();
-  lsSet("st_cfg",cfg);renderAll();
-  if(dbReady){try{await db.doc("config/empresa").set(cfg);$("#cfgSaved").textContent="Salvo"}catch(e){$("#cfgSaved").textContent="Salvo só neste navegador"}}else $("#cfgSaved").textContent="Salvo neste navegador";
+  empresas[empId]={...cfg}; lsSet("st_empresas",empresas); lsSet("st_cfg",cfg);renderAll();if(k==="modulo"){renderCfg();renderBase()}
+  if(dbReady){try{await db.doc("config/"+empId).set(cfg);$("#cfgSaved").textContent="Salvo"}catch(e){$("#cfgSaved").textContent="Salvo só neste navegador"}}else $("#cfgSaved").textContent="Salvo neste navegador";
 });
 
 /* ---------- memória de cálculo em PDF ---------- */
 const pdfTxt=s=>String(s??"").replace(/[→]/g,"->").replace(/[−]/g,"-").replace(/[“”]/g,'"').replace(/[‘’]/g,"'").replace(/[^\x00-\xFF—–•…ºª°]/g,"");
 async function memoriaPDF(noteId){
   const n=notes.find(x=>x.id===noteId); if(!n){toast("Nota não encontrada");return}
+  if(isBA()) return memoriaBA(periodoBA(n));
   if(!window.jspdf||!window.jspdf.jsPDF){toast("Gerador de PDF não carregou — recarregue a página");return}
   const {jsPDF}=window.jspdf; const doc=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"});
   const c=calcAll().find(x=>x.n.id===noteId), rows=c.rows, calcRows=rows.filter(isCalc);
@@ -983,15 +1007,16 @@ async function pushNote(n){ if(!dbReady) return; try{ const {_shared,...clean}=n
 async function dropNote(id){ if(!dbReady) return; try{ await db.doc("notas/"+safeId(id)).delete(); }catch(e){} }
 async function importFiles(files){
   let ok=0,err=[];
-  for(const f of files){try{const n=parseNFe(await f.text(),f.name);notes=notes.filter(x=>x.id!==n.id);notes.push(n);ok++;pushNote(n)}catch(e){err.push(f.name+": "+e.message)}}
-  sortNotes();saveNotes();const m=$("#importMsg");m.hidden=false;m.innerHTML=`${ok} nota(s) importada(s).`+(err.length?` <span style="color:var(--bad)">Falharam: ${esc(err.join("; "))}</span>`:"");renderAll();
+  const rpi=isBA()?($("#refPerImp").value||""):"";
+  for(const f of files){try{const n=parseNFe(await f.text(),f.name); if(rpi&&rpi!==(n.dhEmi||"").slice(0,7)) n.refPer=rpi;notes=notes.filter(x=>x.id!==n.id);notes.push(n);ok++;pushNote(n)}catch(e){err.push(f.name+": "+e.message)}}
+  sortNotes();saveNotes();const m=$("#importMsg");m.hidden=false;const fora=notes.filter(n=>!notaDaEmpresa(n)&&files.some(f=>n.fileName===f.name)).length;m.innerHTML=`${ok} nota(s) importada(s).`+(fora?` <span style="color:var(--warn)">${fora} não são da empresa selecionada (${esc(cfg.razao||'')}) — troque a empresa no topo para vê-las.</span>`:"")+(err.length?` <span style="color:var(--bad)">Falharam: ${esc(err.join("; "))}</span>`:"");renderAll();
 }
 $("#fileIn").addEventListener("change",e=>{importFiles([...e.target.files]);e.target.value=""});
 const drop=$("#drop");
 ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over")}));
 ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over")}));
 drop.addEventListener("drop",e=>importFiles([...e.dataTransfer.files].filter(f=>/xml$/i.test(f.name)||f.type.includes("xml"))));
-$("#btnClear").addEventListener("click",function(){if(this.dataset.confirm!=="1"){this.dataset.confirm="1";this.textContent="Confirmar limpeza?";setTimeout(()=>{this.dataset.confirm="";this.textContent="Limpar notas"},3000);return}notes=[];saveNotes();renderAll()});
+$("#btnClear").addEventListener("click",function(){if(this.dataset.confirm!=="1"){this.dataset.confirm="1";this.textContent="Confirmar limpeza?";setTimeout(()=>{this.dataset.confirm="";this.textContent="Limpar notas"},3000);return}const ids=new Set(notesAtivas().map(n=>n.id)); notes=notes.filter(n=>!ids.has(n.id)); saveNotes();renderAll()});
 
 const EXAMPLE_XML=`<nfeProc versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe"><NFe xmlns="http://www.portalfiscal.inf.br/nfe"><infNFe Id="NFe43260990316407000204550010003127581967561551" versao="4.00"><ide><cUF>43</cUF><cNF>96756155</cNF><natOp>6.101-VENDA PRODUCAO ESTABELECIMENTO</natOp><mod>55</mod><serie>1</serie><nNF>312758</nNF><dhEmi>2026-09-11T08:10:00-03:00</dhEmi><dhSaiEnt>2026-09-11T08:10:00-03:00</dhSaiEnt><tpNF>1</tpNF><idDest>2</idDest><cMunFG>4310405</cMunFG><tpImp>1</tpImp><tpEmis>1</tpEmis><cDV>1</cDV><tpAmb>1</tpAmb><finNFe>1</finNFe><indFinal>0</indFinal><indPres>9</indPres><indIntermed>0</indIntermed><procEmi>0</procEmi><verProc>Rech 25.20j b1655</verProc></ide><emit><CNPJ>90316407000204</CNPJ><xNome>ROMAR F MANN &amp; CIA. LTDA.</xNome><xFant>ROMAR FILIAL</xFant><enderEmit><xLgr>R ANIZIO ARAUJO E SILVA</xLgr><nro>92</nro><xBairro>CENTRO</xBairro><cMun>4310405</cMun><xMun>INDEPENDENCIA</xMun><UF>RS</UF><CEP>98915000</CEP><cPais>1058</cPais><xPais>BRASIL</xPais><fone>5535394000</fone></enderEmit><IE>1980002417</IE><CRT>3</CRT></emit><dest><CNPJ>21174220000292</CNPJ><xNome>XINGU MAQUINAS AGRICOLAS LTDA</xNome><enderDest><xLgr>AV SUL</xLgr><nro>424</nro><xCpl>QUADRA: 13 LOT</xCpl><xBairro>SETOR H</xBairro><cMun>5107065</cMun><xMun>QUERENCIA</xMun><UF>MT</UF><CEP>78643000</CEP><cPais>1058</cPais><xPais>BRASIL</xPais><fone>6635291002</fone></enderDest><indIEDest>1</indIEDest><IE>135831695</IE><email>frederico.gasperi@xingumaquinas.com</email></dest><autXML><CPF>53360460006</CPF></autXML><det nItem="1"><prod><cProd>47818798</cProd><cEAN>7895823940250</cEAN><xProd>BARRA CENTRAL DA PLATAFORMA 47547951, 47818798 GTIN: 07895823940250 54001000592</xProd><NCM>84339090</NCM><CEST>0104501</CEST><cBenef>SEM CBENEF</cBenef><EXTIPI>01</EXTIPI><CFOP>6101</CFOP><uCom>PC</uCom><qCom>2.000</qCom><vUnCom>605.17</vUnCom><vProd>1210.34</vProd><cEANTrib>7895823940250</cEANTrib><uTrib>PC</uTrib><qTrib>2.000</qTrib><vUnTrib>605.17</vUnTrib><indTot>1</indTot><xPed>42110</xPed></prod><imposto><ICMS><ICMS20><orig>0</orig><CST>20</CST><modBC>3</modBC><pRedBC>41.4280</pRedBC><vBC>708.92</vBC><pICMS>7.0000</pICMS><vICMS>49.62</vICMS></ICMS20></ICMS><IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>1210.34</vBC><pIPI>2.6000</pIPI><vIPI>31.47</vIPI></IPITrib></IPI><PIS><PISAliq><CST>02</CST><vBC>1160.72</vBC><pPIS>2.3000</pPIS><vPIS>26.70</vPIS></PISAliq></PIS><COFINS><COFINSAliq><CST>02</CST><vBC>1160.72</vBC><pCOFINS>10.8000</pCOFINS><vCOFINS>125.36</vCOFINS></COFINSAliq></COFINS><IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib><gIBSCBS><vBC>1008.66</vBC><gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>1.01</vIBSUF></gIBSUF><gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>1.01</vIBS><gCBS><pCBS>0.9000</pCBS><vCBS>9.08</vCBS></gCBS></gIBSCBS></IBSCBS></imposto><infAdProd>O.C: 42110</infAdProd><vItem>1241.81</vItem></det><det nItem="2"><prod><cProd>47550259</cProd><cEAN>7895823945675</cEAN><xProd>BLOCO BRACO CENTRAL DA PLATAFORMA 47550259 GTIN: 07895823945675 5401126660</xProd><NCM>84339090</NCM><CEST>0104501</CEST><cBenef>SEM CBENEF</cBenef><CFOP>6101</CFOP><uCom>PC</uCom><qCom>6.000</qCom><vUnCom>242.90</vUnCom><vProd>1457.40</vProd><cEANTrib>7895823945675</cEANTrib><uTrib>PC</uTrib><qTrib>6.000</qTrib><vUnTrib>242.90</vUnTrib><indTot>1</indTot><xPed>42110</xPed></prod><imposto><ICMS><ICMS20><orig>0</orig><CST>20</CST><modBC>3</modBC><pRedBC>41.4280</pRedBC><vBC>853.63</vBC><pICMS>7.0000</pICMS><vICMS>59.75</vICMS></ICMS20></ICMS><IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>1457.40</vBC><pIPI>2.6000</pIPI><vIPI>37.89</vIPI></IPITrib></IPI><PIS><PISAliq><CST>02</CST><vBC>1397.65</vBC><pPIS>1.6500</pPIS><vPIS>23.06</vPIS></PISAliq></PIS><COFINS><COFINSAliq><CST>02</CST><vBC>1397.65</vBC><pCOFINS>7.6000</pCOFINS><vCOFINS>106.22</vCOFINS></COFINSAliq></COFINS><IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib><gIBSCBS><vBC>1268.37</vBC><gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>1.27</vIBSUF></gIBSUF><gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>1.27</vIBS><gCBS><pCBS>0.9000</pCBS><vCBS>11.42</vCBS></gCBS></gIBSCBS></IBSCBS></imposto><infAdProd>O.C: 42110</infAdProd><vItem>1495.29</vItem></det><det nItem="3"><prod><cProd>48004997</cProd><cEAN>7895823939452</cEAN><xProd>PISO PLATAFORMA DRAPER - LD 48004997 GTIN: 07895823939452 50009002333</xProd><NCM>84339090</NCM><CEST>0104501</CEST><cBenef>SEM CBENEF</cBenef><EXTIPI>01</EXTIPI><CFOP>6101</CFOP><uCom>PC</uCom><qCom>1.000</qCom><vUnCom>104.10</vUnCom><vProd>104.10</vProd><cEANTrib>7895823939452</cEANTrib><uTrib>PC</uTrib><qTrib>1.000</qTrib><vUnTrib>104.10</vUnTrib><indTot>1</indTot><xPed>42110</xPed></prod><imposto><ICMS><ICMS20><orig>0</orig><CST>20</CST><modBC>3</modBC><pRedBC>41.4280</pRedBC><vBC>60.97</vBC><pICMS>7.0000</pICMS><vICMS>4.27</vICMS></ICMS20></ICMS><IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>104.10</vBC><pIPI>2.6000</pIPI><vIPI>2.71</vIPI></IPITrib></IPI><PIS><PISAliq><CST>02</CST><vBC>99.83</vBC><pPIS>2.3000</pPIS><vPIS>2.30</vPIS></PISAliq></PIS><COFINS><COFINSAliq><CST>02</CST><vBC>99.83</vBC><pCOFINS>10.8000</pCOFINS><vCOFINS>10.78</vCOFINS></COFINSAliq></COFINS><IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib><gIBSCBS><vBC>86.75</vBC><gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>0.09</vIBSUF></gIBSUF><gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>0.09</vIBS><gCBS><pCBS>0.9000</pCBS><vCBS>0.78</vCBS></gCBS></gIBSCBS></IBSCBS></imposto><infAdProd>O.C: 42110</infAdProd><vItem>106.81</vItem></det><det nItem="4"><prod><cProd>48004995</cProd><cEAN>7895823935027</cEAN><xProd>PISO PLATAFORMA DRAPER - LE 48004995 GTIN: 07895823935027 50009002214</xProd><NCM>84339090</NCM><CEST>0104501</CEST><cBenef>SEM CBENEF</cBenef><EXTIPI>01</EXTIPI><CFOP>6101</CFOP><uCom>PC</uCom><qCom>1.000</qCom><vUnCom>104.10</vUnCom><vProd>104.10</vProd><cEANTrib>7895823935027</cEANTrib><uTrib>PC</uTrib><qTrib>1.000</qTrib><vUnTrib>104.10</vUnTrib><indTot>1</indTot><xPed>42110</xPed></prod><imposto><ICMS><ICMS20><orig>0</orig><CST>20</CST><modBC>3</modBC><pRedBC>41.4280</pRedBC><vBC>60.97</vBC><pICMS>7.0000</pICMS><vICMS>4.27</vICMS></ICMS20></ICMS><IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>104.10</vBC><pIPI>2.6000</pIPI><vIPI>2.71</vIPI></IPITrib></IPI><PIS><PISAliq><CST>02</CST><vBC>99.83</vBC><pPIS>2.3000</pPIS><vPIS>2.30</vPIS></PISAliq></PIS><COFINS><COFINSAliq><CST>02</CST><vBC>99.83</vBC><pCOFINS>10.8000</pCOFINS><vCOFINS>10.78</vCOFINS></COFINSAliq></COFINS><IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib><gIBSCBS><vBC>86.75</vBC><gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>0.09</vIBSUF></gIBSUF><gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>0.09</vIBS><gCBS><pCBS>0.9000</pCBS><vCBS>0.78</vCBS></gCBS></gIBSCBS></IBSCBS></imposto><infAdProd>O.C: 42110</infAdProd><vItem>106.81</vItem></det><det nItem="5"><prod><cProd>48031697</cProd><cEAN>7895823941936</cEAN><xProd>BRACO ACIONAMENTO CONJUNTO DE FACAS 48031697; 47767739; GTIN: 07895823941936 54011001460</xProd><NCM>84339090</NCM><CEST>0104501</CEST><cBenef>SEM CBENEF</cBenef><EXTIPI>01</EXTIPI><CFOP>6101</CFOP><uCom>PC</uCom><qCom>1.000</qCom><vUnCom>1052.90</vUnCom><vProd>1052.90</vProd><cEANTrib>7895823941936</cEANTrib><uTrib>PC</uTrib><qTrib>1.000</qTrib><vUnTrib>1052.90</vUnTrib><indTot>1</indTot><xPed>42110</xPed></prod><imposto><ICMS><ICMS20><orig>0</orig><CST>20</CST><modBC>3</modBC><pRedBC>41.4280</pRedBC><vBC>616.70</vBC><pICMS>7.0000</pICMS><vICMS>43.17</vICMS></ICMS20></ICMS><IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>1052.90</vBC><pIPI>2.6000</pIPI><vIPI>27.38</vIPI></IPITrib></IPI><PIS><PISAliq><CST>02</CST><vBC>1009.73</vBC><pPIS>2.3000</pPIS><vPIS>23.22</vPIS></PISAliq></PIS><COFINS><COFINSAliq><CST>02</CST><vBC>1009.73</vBC><pCOFINS>10.8000</pCOFINS><vCOFINS>109.05</vCOFINS></COFINSAliq></COFINS><IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib><gIBSCBS><vBC>877.46</vBC><gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>0.88</vIBSUF></gIBSUF><gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>0.88</vIBS><gCBS><pCBS>0.9000</pCBS><vCBS>7.90</vCBS></gCBS></gIBSCBS></IBSCBS></imposto><infAdProd>O.C: 42110</infAdProd><vItem>1080.28</vItem></det><det nItem="6"><prod><cProd>47484097</cProd><cEAN>7895823944500</cEAN><xProd>CARCACA CAIXA DE NAVALHA 47484097 GTIN: 07895823944500 5400125325</xProd><NCM>84339090</NCM><CEST>0104501</CEST><cBenef>SEM CBENEF</cBenef><CFOP>6101</CFOP><uCom>PC</uCom><qCom>1.000</qCom><vUnCom>4214.19</vUnCom><vProd>4214.19</vProd><cEANTrib>7895823944500</cEANTrib><uTrib>PC</uTrib><qTrib>1.000</qTrib><vUnTrib>4214.19</vUnTrib><indTot>1</indTot><xPed>42110</xPed></prod><imposto><ICMS><ICMS20><orig>0</orig><CST>20</CST><modBC>3</modBC><pRedBC>41.4280</pRedBC><vBC>2468.34</vBC><pICMS>7.0000</pICMS><vICMS>172.78</vICMS></ICMS20></ICMS><IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>4214.19</vBC><pIPI>2.6000</pIPI><vIPI>109.57</vIPI></IPITrib></IPI><PIS><PISAliq><CST>02</CST><vBC>4041.41</vBC><pPIS>2.3000</pPIS><vPIS>92.95</vPIS></PISAliq></PIS><COFINS><COFINSAliq><CST>02</CST><vBC>4041.41</vBC><pCOFINS>10.8000</pCOFINS><vCOFINS>436.47</vCOFINS></COFINSAliq></COFINS><IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib><gIBSCBS><vBC>3511.99</vBC><gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>3.51</vIBSUF></gIBSUF><gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>3.51</vIBS><gCBS><pCBS>0.9000</pCBS><vCBS>31.61</vCBS></gCBS></gIBSCBS></IBSCBS></imposto><infAdProd>O.C: 42110</infAdProd><vItem>4323.76</vItem></det><total><ICMSTot><vBC>4769.53</vBC><vICMS>333.86</vICMS><vICMSDeson>0.00</vICMSDeson><vFCP>0.00</vFCP><vBCST>0.00</vBCST><vST>0.00</vST><vFCPST>0.00</vFCPST><vFCPSTRet>0.00</vFCPSTRet><vProd>8143.03</vProd><vFrete>0.00</vFrete><vSeg>0.00</vSeg><vDesc>0.00</vDesc><vII>0.00</vII><vIPI>211.73</vIPI><vIPIDevol>0.00</vIPIDevol><vPIS>170.53</vPIS><vCOFINS>798.66</vCOFINS><vOutro>0.00</vOutro><vNF>8354.76</vNF></ICMSTot><IBSCBSTot><vBCIBSCBS>6839.98</vBCIBSCBS><gIBS><gIBSUF><vDif>0.00</vDif><vDevTrib>0.00</vDevTrib><vIBSUF>6.85</vIBSUF></gIBSUF><gIBSMun><vDif>0.00</vDif><vDevTrib>0.00</vDevTrib><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>6.85</vIBS><vCredPres>0.00</vCredPres><vCredPresCondSus>0.00</vCredPresCondSus></gIBS><gCBS><vDif>0.00</vDif><vDevTrib>0.00</vDevTrib><vCBS>61.57</vCBS><vCredPres>0.00</vCredPres><vCredPresCondSus>0.00</vCredPresCondSus></gCBS></IBSCBSTot><vNFTot>8354.76</vNFTot></total><transp><modFrete>1</modFrete><transporta><CNPJ>05423509000160</CNPJ><xNome>LOPES &amp; OLIVEIRA TRANSPORTES E T</xNome><IE>0250101602</IE><xEnder>R ALFREDO OSCAR KOCHEMBORGER,155/PREDIO</xEnder><xMun>CARAZINHO</xMun><UF>RS</UF></transporta><vol><qVol>3</qVol><esp>REF. 14</esp><marca>CX PAP ONDULADO 208</marca><pesoL>22.962</pesoL><pesoB>22.962</pesoB></vol></transp><cobr><fat><nFat>000312758</nFat><vOrig>8354.76</vOrig><vDesc>0.00</vDesc><vLiq>8354.76</vLiq></fat><dup><nDup>001</nDup><dVenc>2026-10-11</dVenc><vDup>2926.76</vDup></dup><dup><nDup>002</nDup><dVenc>2026-11-10</dVenc><vDup>2714.00</vDup></dup><dup><nDup>003</nDup><dVenc>2026-12-10</dVenc><vDup>2714.00</vDup></dup></cobr><pag><detPag><indPag>1</indPag><tPag>15</tPag><vPag>8354.76</vPag></detPag></pag><infAdic><infCpl>OC: 42110 Representante: RPM REPRES.DE PEC.DE MAQS.EIRELI  CBS 61.57 IBS 6.85</infCpl><obsCont xCampo="Emitido pelo"><xTexto>ERP SIGER</xTexto></obsCont><obsCont xCampo="Rech Informatica"><xTexto>51 3582.4001 - www.rech.com.br</xTexto></obsCont><obsCont xCampo="CODNOT"><xTexto>0243017</xTexto></obsCont><obsCont xCampo="FATPEN"><xTexto>000312758;3;000;1;</xTexto></obsCont><obsCont xCampo="Fones"><xTexto>Fone: (55)3539.4000</xTexto></obsCont><obsCont xCampo="GY-EEM"><xTexto>vendas@rfmann.com.br</xTexto></obsCont></infAdic><compra><xPed>42110</xPed></compra><infRespTec><CNPJ>93419380000184</CNPJ><xContato>Cleber Fabiano Sesterheim</xContato><email>controladoria@rech.com.br</email><fone>5135824001</fone></infRespTec></infNFe></NFe><protNFe versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe"><infProt><tpAmb>1</tpAmb><verAplic>RS2609090815DR</verAplic><chNFe>43260990316407000204550010003127581967561551</chNFe><dhRecbto>2026-09-11T08:10:18-03:00</dhRecbto><nProt>243260392517802</nProt><digVal>MmZBNW6gSI0VeP0Vbgn9mKTUXzU=</digVal><cStat>100</cStat><xMotivo>Autorizado o uso da NF-e</xMotivo></infProt></protNFe></nfeProc>`;
 function loadExample(){const n=parseNFe(EXAMPLE_XML,"exemplo.xml");notes=notes.filter(x=>x.id!==n.id);notes.push(n);saveNotes();renderAll()}
@@ -1005,6 +1030,7 @@ async function saveFile(filename,data){
   try{await dl.save({filename,data})}catch(e){if(e.code!=="declined")toast("Não foi possível salvar: "+(e.message||e.code))}
 }
 $("#btnXlsx").addEventListener("click",async()=>{
+  if(isBA()) return xlsxBA("");
   if(!window.XLSX){toast("Biblioteca da planilha não carregou — use o CSV");return}
   const H=["Nome Emit.","UF Emitente","IE Dest.","Nome Dest.","UF Dest.","Núm. Nota","Data Emi.","Descr. Item","NCM","CFOP","Alíq. ICMS","Unidade","Quantidade","Vl. Unitário","VL. Total","VL. IPI","VL. Frete","VL. Seguro","VL. Desconto","Vl. Outros","VL. Líquido","Base ICMS","Perc. Redução","VL. ICMS","IVA","Alíq. ICMS S.T.","Base ICMS S.T.","VL. ICMS S.T.","VALOR TOTAL DO ITEM","IVA CORRETO","REDUÇÃO","BASE ICMS ST","REDUCAO","VALOR ICMS ST","DIFERENÇA A RECOLHER"];
   const aoa=[[],H]; const calc=calcAll(); let row=3; const first=3;
@@ -1031,13 +1057,261 @@ $("#btnCsv").addEventListener("click",()=>{
 });
 $("#btnJson").addEventListener("click",()=>{const gs=buildGuides(calcAll()).filter(g=>!hist[g.id]);saveFile("guias-gnre-"+todayISO()+".json",JSON.stringify(gs.map(guideJson),null,2))});
 
+/* ---------- BA ---------- */
+/* ================= MÓDULO BA — ANTECIPAÇÃO PARCIAL ================= */
+let BASE_BA=null, BASE_BA_ERR="";
+async function loadBaseBA(){try{if(window.__BASE_BA_EMBED){BASE_BA=window.__BASE_BA_EMBED}else{const r=await fetch("base-legal-ba.json");if(!r.ok)throw new Error("HTTP "+r.status);BASE_BA=await r.json();}}catch(e){BASE_BA_ERR=e.message;}renderAll();renderBase();}
+const rulesAtivas=()=>rules.filter(r=>(r.uf||"").toUpperCase()===(cfg.uf||"").toUpperCase());
+function ba5291(ncm){ if(!BASE_BA) return null; ncm=onlyDigits(ncm);
+  for(const k of ["a2","a1"]){ const hit=BASE_BA.conv5291[k].find(([,ns])=>ns.some(p=>ncm.startsWith(p))); if(hit) return {anexo:k,item:hit[0],carga:BASE_BA.meta.cargaConv5291[k]} }
+  return null }
+function baAnexo1(ncm){ if(!BASE_BA) return null; ncm=onlyDigits(ncm); let best=null;
+  for(const [seg,v] of Object.entries(BASE_BA.anexo1)){ const p=v.ncms.filter(x=>ncm.startsWith(x)).sort((a,b)=>b.length-a.length)[0]; if(p&&(!best||p.length>best.p.length)) best={seg,nome:v.nome,p} }
+  return best }
+function baRuleFor(it,n){
+  const rs=rulesAtivas(), emit=rootOf(n&&n.emit?n.emit.cnpj:"");
+  const prod=rs.find(r=>r.cProd&&String(r.cProd).trim()===String(it.cProd||"").trim()&&(!r.cnpjEmit||onlyDigits(r.cnpjEmit).slice(0,8)===emit));
+  if(prod) return prod;
+  const ncm=onlyDigits(it.ncm);
+  return rs.filter(r=>!r.cProd&&onlyDigits(r.ncm)&&ncm.startsWith(onlyDigits(r.ncm))).sort((a,b)=>onlyDigits(b.ncm).length-onlyDigits(a.ncm).length)[0]||null }
+function classifyBA(it,n){
+  const ncm=onlyDigits(it.ncm), fund=[], conferir=[]; let tipo="parcial", origem="padrao";
+  const rule=baRuleFor(it,n);
+  const ncmUso=rule&&rule.ncmProprio?onlyDigits(rule.ncmProprio):ncm;
+  if(rule&&rule.tipoBA){ tipo=rule.tipoBA==="st"?"st":"parcial"; origem="regra"; fund.push((rule.cProd?`Decisão por produto (cód. ${rule.cProd}${rule.ncmProprio?`, NCM próprio ${ncmFmt(ncmUso)}`:""})`:`Decisão cadastrada para o NCM ${ncmFmt(onlyDigits(rule.ncm))}`)+": "+(rule.fonte||(tipo==="st"?"sujeito à ST (antecipação total)":"tributado — antecipação parcial"))); if(!rule.validada) conferir.push("Regra ainda não validada.") }
+  else if(BASE_BA&&BASE_BA.decisoes[ncmUso]){ tipo=BASE_BA.decisoes[ncmUso]==="ST"?"st":"parcial"; origem="empresa"; fund.push(`NCM ${ncmFmt(ncmUso)} classificado como ${tipo==="st"?"ST (antecipação total)":"tributado (antecipação parcial)"} na tabela de regras tributárias da empresa (consulta Econet).`) }
+  else { const a=baAnexo1(ncmUso);
+    if(a){ tipo="st"; origem="anexo1"; fund.push(`NCM ${ncmFmt(ncmUso)} consta no Anexo 1 do RICMS-BA (2026), segmento ${a.seg} — ${a.nome} (posição ${ncmFmt(a.p)}).`); conferir.push(`Enquadrado como ST pela lista do Anexo 1 (seg. ${a.seg}) — confirmar se a descrição do produto corresponde ao item do Anexo.`) }
+    else { origem="padrao"; fund.push(`NCM ${ncmFmt(ncmUso)} não consta no Anexo 1 do RICMS-BA nem na tabela da empresa: tratado como tributado (antecipação parcial).`); conferir.push(`NCM ${ncmFmt(ncmUso)} sem classificação cadastrada — confirmar que não está sujeito à ST na BA.`) } }
+  let carga=0, cargaRef="";
+  if(tipo==="parcial"){
+    if(rule&&num(rule.carga)>0){ carga=num(rule.carga); cargaRef=`Carga de ${pct(carga)} definida na regra${rule.fonte?": "+rule.fonte:""}` }
+    else { const cv=ba5291(ncmUso);
+      if(cv){ carga=cv.carga; cargaRef=cv.anexo==="a2"?`Carga tributária de 5,6% — máquinas e implementos agrícolas, Conv. ICMS 52/91, Anexo II, item ${cv.item} (RICMS-BA/2012, art. 266, I, "b").`:`Carga tributária de 8,8% — máquinas e equipamentos industriais, Conv. ICMS 52/91, Anexo I, item ${cv.item} (RICMS-BA/2012, art. 266, I, "a").`;
+        if(origem!=="regra") conferir.push(`Redução do Conv. 52/91 aplicada pelo NCM (Anexo ${cv.anexo==="a2"?"II":"I"}, item ${cv.item}) — o benefício depende da descrição do produto no Anexo.`) }
+      else { carga=num(cfg.aliqPadrao)||(BASE_BA?BASE_BA.meta.aliqInternaPadrao:20.5); cargaRef=`Alíquota interna padrão de ${pct(carga)} (Lei 7.014/96, art. 15, I) — NCM sem redução de base no Conv. ICMS 52/91.` } }
+    fund.push(cargaRef) }
+  return {tipo,origem,rule,ncmUso,carga,cargaRef,fund,conferir};
+}
+function calcParcialBA(n,it){
+  const ufO=n.emit.uf, ufD=n.dest.uf;
+  const out={it,ufO,ufD,status:"",base:0,carga:0,antec:0,cred:0,icmsRaw:0,fcpRaw:0};
+  if(rootOf(n.dest.cnpj)!==rootOf(cfg.cnpj)){out.status="naoentrada";return out}
+  if(ufO===ufD){out.status="interna";return out}
+  if(it.vICMSST>0){out.status="retida";return out}
+  const c=classifyBA(it,n); out.cls=c; out.legal={fund:c.fund,conferir:c.conferir};
+  if(c.tipo==="st"){out.status="st_ba";return out}
+  if(!/^6/.test(it.cfop||"")) out.cfopAlert=`CFOP ${it.cfop} não é de operação interestadual.`;
+  else if(!/^6(10[1-9]|11[0-9]|12[0-9])$/.test(it.cfop||"")) out.cfopAlert=`CFOP ${it.cfop} não é de venda/revenda — confirmar se a mercadoria é para comercialização.`;
+  const base=it.vProd-it.vDesc+(cfg.ipiNaBase?it.vIPI:0)+(cfg.freteNaBase?it.vFrete:0);
+  const antec=base*c.carga/100, cred=it.vICMS||0, dif=antec-cred;
+  Object.assign(out,{status:"parcial",base,carga:c.carga,antec,cred,difBruta:dif,negativo:dif<-0.005,icmsRaw:Math.max(0,dif),icmsST:r2(Math.max(0,dif))});
+  return out;
+}
+function periodoBA(n){return n.refPer||(n.dhEmi||"").slice(0,7)}
+function vencBA(per){ if(!per) return ""; const [y,m]=per.split("-").map(Number); const d=new Date(y,m,parseInt(cfg.diaVenc)||25); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10) }
+function buildGuidesBA(calc){
+  const byPer={};
+  for(const c of calc){ const rows=c.rows.filter(r=>r.status==="parcial"); if(!rows.length) continue; const per=periodoBA(c.n);
+    (byPer[per]=byPer[per]||{per,calc:[],raw:0}).calc.push(c); byPer[per].raw+=rows.reduce((a,r)=>a+r.icmsRaw,0) }
+  return Object.values(byPer).sort((a,b)=>b.per.localeCompare(a.per)).map(p=>{ const valor=r2(p.raw); const notas=p.calc.filter(c=>c.rows.some(r=>r.status==="parcial"&&r.icmsRaw>0)).map(c=>c.n);
+    return {id:`BA-${rootOf(cfg.cnpj)}-${p.per}`,per:p.per,periodo:p.per.slice(5,7)+"/"+p.per.slice(0,4),venc:vencBA(p.per),receita:cfg.receitaLocal||"2175",tipo:"ICMS antecipação parcial",guia:"DAE · SEFAZ-BA",uf:"BA",local:true,valor,notas,calc:p.calc,n:notas[0]||p.calc[0].n,chave:"",nNF:notas.map(n=>n.nNF).join(", ")} }).filter(g=>g.valor>0);
+}
+function baCountsBadge(rows){const s=k=>rows.filter(r=>r.status===k).length;return {par:s("parcial"),st:s("st_ba"),ret:s("retida")}}
+function renderCalcBA(calc){
+  const only=$("#onlyST").checked, all=calc.flatMap(c=>c.rows), par=all.filter(r=>r.status==="parcial");
+  const tot=k=>par.reduce((a,r)=>a+(r[k]||0),0);
+  $("#sumBox").innerHTML=`
+    <div><div class="label">Notas</div><div class="v">${calc.length}</div></div>
+    <div><div class="label">Itens na antecipação parcial</div><div class="v">${par.length}</div></div>
+    <div><div class="label">Base</div><div class="v">${fmt(tot("base"))}</div></div>
+    <div><div class="label">Antecipação (base × alíq.)</div><div class="v">${fmt(tot("antec"))}</div></div>
+    <div><div class="label">(−) ICMS destacado</div><div class="v">${fmt(tot("cred"))}</div></div>
+    <div><div class="label">Diferença a recolher</div><div class="v accent">${fmt(r2(tot("icmsRaw")))}</div></div>
+    <div><div class="label">Itens ST (antecipação total)</div><div class="v">${all.filter(r=>r.status==="st_ba").length}</div></div>`;
+  if(!calc.length){$("#calcTbl").innerHTML=`<tr><td class="empty">Importe as notas de entrada da ${esc(cfg.razao||"empresa")} para ver o cálculo.</td></tr>`;return}
+  const PILL={parcial:'<span class="pill acc">antecipação parcial</span>',st_ba:'<span class="pill neu">ST — antecipação total</span>',retida:'<span class="pill neu">ST retida pelo fornecedor</span>',interna:'<span class="pill neu">operação interna</span>',naoentrada:'<span class="pill neu">não é entrada</span>'};
+  let h=`<thead><tr><th>Item</th><th>NCM / CEST</th><th>Situação</th><th class="num">Valor item</th><th class="num">IPI</th><th class="num">Desconto</th><th class="num">Base</th><th class="num">Alíquota</th><th class="num">Antecipação</th><th class="num">(−) ICMS destacado</th><th class="num">Diferença</th></tr></thead><tbody>`;
+  for(const {n,rows} of calc){
+    const vis=only?rows.filter(r=>r.status==="parcial"):rows; if(!vis.length) continue;
+    h+=`<tr class="sub"><td colspan="11">NF-e ${esc(n.nNF)} · ${esc(n.emit.uf)} → ${esc(n.dest.uf)} · ${esc(n.emit.nome)} · ${brDate(n.dhEmi)}</td></tr>`;
+    for(const r of vis){ const it=r.it, d=r.status==="parcial", c=r.cls;
+      const conf=r.legal&&r.legal.conferir.length;
+      const acts=canEditRules&&c?`<div style="font-size:12px;margin-top:2px">${c.tipo==="st"?`<button class="ghost" style="padding:2px 0;font-size:12px" data-baprod="parcial|${esc(n.id)}|${esc(it.nItem)}">tratar este produto como tributado</button>`:`<button class="ghost" style="padding:2px 0;font-size:12px" data-baprod="st|${esc(n.id)}|${esc(it.nItem)}">tratar este produto como ST</button>`} · <button class="ghost" style="padding:2px 0;font-size:12px" data-analyzeit="${esc(n.id)}|${esc(it.nItem)}">analisar NCM</button></div>`:"";
+      h+=`<tr><td class="desc"><span class="mono faint">${esc(it.nItem)}</span> ${esc(it.xProd)}<div class="faint" style="font-size:12px">cód. ${esc(it.cProd)} · CFOP ${esc(it.cfop)} · CST ${esc(it.orig)}${esc(it.cst)}${r.cls&&r.cls.rule&&r.cls.rule.cProd?' · <b>decisão por produto</b>':''}</div>${r.legal?`<details style="margin-top:4px"><summary style="font-size:12px">fundamentação</summary><ul class="steps" style="font-size:12px">${r.legal.fund.map(f=>`<li>${esc(f)}</li>`).join("")}${r.legal.conferir.map(f=>`<li style="color:var(--warn)">${esc(f)}</li>`).join("")}${r.negativo?`<li style="color:var(--warn)">ICMS destacado maior que a antecipação: diferença negativa (${fmt(r.difBruta)}) considerada zero.</li>`:""}</ul></details>`:''}${acts}</td>
+      <td class="mono">${esc(it.ncm)}<div class="faint">${esc(it.cest)||"—"}</div></td><td>${PILL[r.status]||esc(r.status)}${conf?' <span class="pill warn">conferir</span>':''}</td>
+      <td class="num">${fmt(it.vProd)}</td><td class="num">${it.vIPI?fmt(it.vIPI):"—"}</td><td class="num">${it.vDesc?fmt(it.vDesc):"—"}</td>
+      <td class="num">${d?fmt(r.base):"—"}</td><td class="num">${d?pct(r.carga):"—"}</td><td class="num">${d?fmt(r.antec):"—"}</td><td class="num">${fmt(it.vICMS)}</td><td class="num"><b>${d?fmt(r.icmsST):(r.status==="retida"?"ST "+fmt(it.vICMSST):"—")}</b></td></tr>`; }
+  }
+  $("#calcTbl").innerHTML=h+"</tbody>";
+}
+async function baProdRule(tipo,nid,ni){
+  const n=notes.find(x=>x.id===nid), it=n&&n.items.find(i=>i.nItem===ni); if(!it) return;
+  const c=classifyBA({...it},n), cv=ba5291(it.ncm);
+  const carga=0;
+  const r={id:"ba-p-"+Date.now().toString(36),uf:"BA",ncm:onlyDigits(it.ncm),cProd:String(it.cProd||"").trim(),cnpjEmit:rootOf(n.emit.cnpj),descricao:(it.xProd||"").slice(0,60),tipoBA:tipo,carga,mva:0,aliqInterna:0,fcp:0,reducao:0,ajustar:false,validada:true,
+    fonte:`Produto ${it.cProd} de ${n.emit.nome} tratado como ${tipo==="st"?"sujeito à ST (antecipação total)":"tributado (antecipação parcial)"} — decisão registrada em ${new Date().toLocaleDateString("pt-BR")}${window.__siteUser?" por "+window.__siteUser.email:""}.`};
+  rules.push(r); saveRule(r); renderAll(); toast("Decisão gravada para o produto "+it.cProd);
+}
+document.addEventListener("change",e=>{const i=e.target.closest("[data-refper]");if(!i)return;const n=notes.find(x=>x.id===i.dataset.refper);if(!n||!/^\d{4}-\d{2}$/.test(i.value))return;if(i.value===(n.dhEmi||"").slice(0,7))delete n.refPer;else n.refPer=i.value;saveNotes();pushNote(n);renderAll();toast("Mês de referência da NF "+n.nNF+": "+i.value.split("-").reverse().join("/"))});
+document.addEventListener("click",e=>{const b=e.target.closest("#calcTbl [data-baprod]");if(!b)return;const [t,nid,ni]=b.dataset.baprod.split("|");baProdRule(t,nid,ni)});
+let PEND_BA=[];
+function renderPendBA(calc){
+  const P=[]; PEND_BA=[];
+  if(!BASE_BA) P.push({lvl:"bad",t:"Base legal da BA não carregou",d:esc(BASE_BA_ERR||"carregando…")+" — a classificação usa só as regras cadastradas.",a:""});
+  if(!cfg.receitaLocal) P.push({lvl:"bad",t:"Código de receita do DAE não configurado",d:"Informe na aba Empresa (antecipação parcial: 2175).",a:`<button data-go="config">Abrir Empresa</button>`});
+  const grp={}; calc.forEach(({n,rows})=>rows.filter(r=>r.legal&&r.legal.conferir.length&&(r.status==="parcial"||r.status==="st_ba")).forEach(r=>{const k=r.cls.ncmUso+"|"+r.status;(grp[k]=grp[k]||{r,n,notas:new Set()}).notas.add(n.nNF)}));
+  Object.values(grp).forEach(({r,n,notas})=>{const i=PEND_BA.push({r,n})-1; const st=r.status==="st_ba";
+    P.push({lvl:"warn",t:`${st?"ST na BA?":"Conferir classificação"}: NCM <span class="mono">${esc(r.cls.ncmUso)}</span>${st?"":` · alíquota ${pct(r.carga)}`}`,d:`${esc(r.it.xProd.slice(0,60))} · NF ${[...notas].join(", ")} — ${r.legal.conferir.map(esc).join(" ")}`,
+      a:`<div class="row">${canEditRules?`<button class="primary" data-baok="parcial|${i}">Confirmar: tributado${st?"":" "+pct(r.carga)}</button><button data-baok="st|${i}">Confirmar: ST</button>`:""}<button data-baanalyze="${i}">Analisar NCM</button></div>`})});
+  const neg=[]; calc.forEach(({n,rows})=>rows.filter(r=>r.negativo).forEach(r=>neg.push(`NF ${n.nNF} item ${r.it.nItem}`)));
+  if(neg.length) P.push({lvl:"warn",t:`${neg.length} item(ns) com ICMS destacado maior que a antecipação`,d:esc(neg.slice(0,8).join(", "))+(neg.length>8?"…":"")+" — diferença negativa considerada zero (não abate dos demais itens).",a:""});
+  const cfA={}; calc.forEach(({n,rows})=>rows.filter(r=>r.cfopAlert).forEach(r=>{(cfA[n.nNF]=cfA[n.nNF]||{r,c:new Set()}).c.add(r.it.cfop)}));
+  Object.entries(cfA).forEach(([nf,{r,c}])=>P.push({lvl:"warn",t:`NF ${esc(nf)}: CFOP ${[...c].join(", ")}`,d:esc(r.cfopAlert),a:""}));
+  rulesAtivas().filter(r=>!r.validada).forEach(r=>P.push({lvl:"warn",t:`Validar regra BA · NCM <span class="mono">${esc(r.ncm)}</span>${r.cProd?` · produto ${esc(r.cProd)}`:""}`,d:esc(r.fonte||"—"),a:canEditRules?`<button data-validate="${esc(r.id)}">Marcar como validada</button>`:""}));
+  const outros=notes.filter(n=>!notaDaEmpresa(n)).length;
+  if(outros) P.push({lvl:"warn",t:`${outros} nota(s) importada(s) são de outra empresa`,d:"Elas aparecem quando você seleciona a empresa correspondente no topo da página.",a:""});
+  $("#pendPanel").hidden=!P.length; $("#pendCount").textContent=P.length+" item(ns)";
+  $("#pendList").innerHTML=P.map(p=>`<div class="note-card"><div><div class="row" style="gap:8px"><span class="pill ${p.lvl}">${p.lvl==="bad"?"bloqueia cálculo":"conferir"}</span><b>${p.t}</b></div><div class="muted" style="font-size:13px">${p.d}</div></div><div>${p.a}</div></div>`).join("");
+}
+document.addEventListener("click",e=>{
+  const ok=e.target.closest("#pendList [data-baok]"); if(ok){ const [tipo,i]=ok.dataset.baok.split("|"); const x=PEND_BA[+i]; if(!x) return; const r0=x.r, ncm=r0.cls.ncmUso, cv=ba5291(ncm);
+    const carga=tipo==="parcial"?(r0.status==="parcial"?r0.carga:(cv?cv.carga:(num(cfg.aliqPadrao)||20.5))):0;
+    const r={id:"ba-"+ncm+"-"+Date.now().toString(36),uf:"BA",ncm,cProd:"",cnpjEmit:"",descricao:(r0.it.xProd||"").slice(0,60),tipoBA:tipo,carga,mva:0,aliqInterna:0,fcp:0,reducao:0,ajustar:false,validada:true,
+      fonte:(tipo==="st"?`NCM ${ncmFmt(ncm)} sujeito à ST na BA (antecipação total)`:`NCM ${ncmFmt(ncm)} tributado — antecipação parcial com alíquota ${pct(carga)}${r0.cls&&r0.cls.cargaRef&&tipo===r0.cls.tipo?" ("+r0.cls.cargaRef+")":""}`)+` — conferido em ${new Date().toLocaleDateString("pt-BR")}${window.__siteUser?" por "+window.__siteUser.email:""}.`};
+    rules.push(r); saveRule(r); renderAll(); toast("Classificação gravada para o NCM "+ncmFmt(ncm)); return }
+  const an=e.target.closest("#pendList [data-baanalyze]"); if(an){ const x=PEND_BA[+an.dataset.baanalyze]; if(x){fillQ(x.r.it,x.n.emit.uf,x.n.dest.uf);setTab("consulta");runLocal()} }
+});
+function guideFieldsBA(g){
+  const nfs=g.notas.map(n=>n.nNF);
+  return [["Código da receita",g.receita],["Referência",g.periodo],["Data de vencimento",brDate(g.venc)],["Inscrição estadual",cfg.ie],["CNPJ",fmtCnpj(cfg.cnpj)],["Razão social",cfg.razao],
+    ["Endereço",cfg.endereco],["Bairro",cfg.bairro],["CEP",cfg.cep],["Município",cfg.municipio],["Código do município",cfg.codMunSefaz],["Valor principal",fmt(g.valor)],
+    ["Notas fiscais",`${nfs.length}: ${nfs.join(", ")}`],["Informações complementares",`ANTECIPAÇÃO PARCIAL REF ${g.periodo.replace("/","-")} · Notas Fiscais: ${nfs.length}`]];
+}
+function renderGuidesBA(guides){
+  const el=$("#guides");
+  if(!guides.length){el.innerHTML=`<div class="panel empty" style="grid-column:1/-1">Nenhuma antecipação parcial a recolher. ${notesAtivas().length?'Confira a aba Cálculo.':'Importe as notas do mês primeiro.'}</div>`;return}
+  el.innerHTML=guides.map(g=>{ const h=hist[g.id]; const fields=guideFieldsBA(g);
+    const copyVal=(k,v)=>/Valor/.test(k)?v:(/CNPJ|CEP|Inscrição/i.test(k)?onlyDigits(v):v);
+    return `<article class="guide">
+      <div class="guide-h"><div><div class="label">${esc(g.guia)} · ${esc(g.tipo)} · ${esc(g.periodo)}</div><div class="amt">R$ ${fmt(g.valor)}</div></div>
+        ${h?`<span class="pill ${h.status==="paga"?"ok":"acc"}">${h.status==="paga"?"paga":"emitida"}</span>`:`<span class="pill warn">a emitir</span>`}</div>
+      <div class="gf">${fields.map(([k,v])=>`<span class="k">${esc(k)}</span><span class="v">${esc(v)||'<span class="faint">—</span>'}</span><button data-copy="${esc(copyVal(k,v))}" aria-label="Copiar ${esc(k)}">copiar</button>`).join("")}</div>
+      <div class="guide-f">
+        ${h?`<div class="muted" style="font-size:12px">Emitido em ${brDate(h.emitidaEm)}${h.controle?` · nosso número <span class="mono">${esc(h.controle)}</span>`:''}</div>
+             <div class="row"><button data-bapdf="${esc(g.per)}">Memória PDF</button><button data-baxlsx="${esc(g.per)}">Planilha (.xlsx)</button><button data-pay="${esc(g.id)}" ${h.status==="paga"?"disabled":""}>Marcar como paga</button><button class="ghost danger" data-undo="${esc(g.id)}">Desfazer registro</button></div>`
+          :`<div class="field"><label class="label" for="ctl-${esc(g.id)}">Nº de série / nosso número do DAE (gerado pela SEFAZ-BA)</label><input id="ctl-${esc(g.id)}" class="mono" placeholder="cole aqui após gerar o DAE"></div>
+             <div class="row"><a class="btn" href="${esc(cfg.portalLocal||"https://www.sefaz.ba.gov.br/")}" target="_blank" rel="noopener">Portal SEFAZ-BA ↗</a><button data-bapdf="${esc(g.per)}">Memória PDF</button><button data-baxlsx="${esc(g.per)}">Planilha (.xlsx)</button><button class="primary" data-baemit="${esc(g.id)}">Registrar emissão</button></div>`}
+      </div></article>`}).join("");
+  el._guides=guides;
+}
+document.addEventListener("click",async e=>{
+  const p=e.target.closest("[data-bapdf]"); if(p){memoriaBA(p.dataset.bapdf);return}
+  const x=e.target.closest("[data-baxlsx]"); if(x){xlsxBA(x.dataset.baxlsx);return}
+  const em=e.target.closest("[data-baemit]"); if(em){ const gs=$("#guides")._guides||[]; const g=gs.find(y=>y.id===em.dataset.baemit); if(!g) return;
+    const ctl=document.getElementById("ctl-"+g.id).value.trim();
+    await saveHist(g.id,{chave:"",nNF:g.nNF,uf:"BA",receita:g.receita,tipo:g.tipo,valor:g.valor,vencimento:g.venc,periodo:g.periodo,controle:ctl,status:"emitida",emitidaEm:todayISO(),emitente:(cfg.razao||"")+" · "+g.notas.length+" NF",destinatario:cfg.razao,empresa:rootOf(cfg.cnpj)}); toast("Emissão registrada") }
+});
+function baGuideCalc(per){ return calcAll().filter(c=>periodoBA(c.n)===per) }
+async function memoriaBA(per){
+  if(!window.jspdf||!window.jspdf.jsPDF){toast("Gerador de PDF não carregou — recarregue a página");return}
+  const calc=baGuideCalc(per); const g=buildGuidesBA(calc)[0];
+  const rows=calc.flatMap(c=>c.rows.filter(r=>r.status==="parcial").map(r=>({...r,n:c.n})));
+  if(!rows.length){toast("Nenhum item de antecipação parcial neste período");return}
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"}); const W=297,M=12; let y=14;
+  const ink=[21,32,28],mute=[95,110,104],acc=[29,107,82];
+  doc.setFont("helvetica","bold");doc.setFontSize(14);doc.setTextColor(...ink);doc.text(pdfTxt("Memória de cálculo — ICMS Antecipação Parcial (BA)"),M,y);
+  doc.setFont("helvetica","normal");doc.setFontSize(9);doc.setTextColor(...mute);doc.text(pdfTxt(`Referência ${per.slice(5,7)}/${per.slice(0,4)} · gerado em ${new Date().toLocaleDateString("pt-BR")}${cfg.responsavel?" · "+cfg.responsavel:""}`),M,y+5); y+=11;
+  const box=(x,yy,w,title,lines)=>{doc.setDrawColor(210,219,215);doc.roundedRect(x,yy,w,24,1.5,1.5);doc.setFont("helvetica","bold");doc.setFontSize(7.5);doc.setTextColor(...mute);doc.text(pdfTxt(title.toUpperCase()),x+3,yy+5);doc.setFont("helvetica","normal");doc.setFontSize(8.3);doc.setTextColor(...ink);let k=0;lines.filter(Boolean).forEach(l=>{doc.splitTextToSize(pdfTxt(l),w-6).forEach(t=>{if(k<4)doc.text(t,x+3,yy+9.5+k*3.7);k++})})};
+  const bw=(W-2*M-8)/3;
+  box(M,y,bw,"Contribuinte",[cfg.razao,`CNPJ ${fmtCnpj(cfg.cnpj)} · IE ${cfg.ie||""}`,`${cfg.municipio||""}/${cfg.uf||""}`]);
+  box(M+bw+4,y,bw,"Documentos",[`${calc.filter(c=>c.rows.some(r=>r.status==="parcial")).length} NF-e de entrada interestadual`,`NF: ${[...new Set(rows.map(r=>r.n.nNF))].join(", ")}`]);
+  box(M+2*(bw+4),y,bw,"DAE",[g?`Receita ${g.receita} · ref. ${g.periodo}`:"",g?`Vencimento ${brDate(g.venc)}`:"",g?`Valor principal R$ ${fmt(g.valor)}`:"Sem valor a recolher"]);
+  y+=28;
+  const body=rows.map(r=>{const it=r.it;return [r.n.nNF,it.nItem,pdfTxt(it.xProd).slice(0,40),ncmFmt(onlyDigits(r.cls.ncmUso)),it.cfop,fmt(it.vProd),it.vIPI?fmt(it.vIPI):"-",it.vDesc?fmt(it.vDesc):"-",fmt(r.base),pct(r.carga),fmt(r.antec),fmt(it.vICMS),fmt(r.icmsRaw)]});
+  const total=g?g.valor:r2(rows.reduce((a,r)=>a+r.icmsRaw,0));
+  doc.autoTable({startY:y,margin:{left:M,right:M},head:[["NF","It.","Descrição","NCM","CFOP","Valor item","IPI","Desc.","Base","Alíq.","Antecipação","(-) ICMS NF","Diferença"]],body,
+    foot:[["","","","","","","","","","","","Total",fmt(total)]],theme:"grid",styles:{font:"helvetica",fontSize:7.4,cellPadding:1.3,textColor:ink,lineColor:[210,219,215]},headStyles:{fillColor:acc,textColor:255,fontStyle:"bold"},footStyles:{fillColor:[216,238,230],textColor:ink,fontStyle:"bold"},
+    columnStyles:{2:{cellWidth:62},5:{halign:"right"},6:{halign:"right"},7:{halign:"right"},8:{halign:"right"},9:{halign:"right"},10:{halign:"right"},11:{halign:"right"},12:{halign:"right",fontStyle:"bold"}}});
+  y=doc.lastAutoTable.finalY+5; doc.setFontSize(8);doc.setTextColor(...mute);
+  [`Base = valor do item${cfg.ipiNaBase?" + IPI":""}${cfg.freteNaBase?" + frete":""} − desconto.   Antecipação = Base × alíquota (interna ou carga reduzida).   Diferença = Antecipação − ICMS destacado na NF-e (negativa = zero).`,
+   "Valores por item sem arredondamento intermediário; o total do período é arredondado ao centavo, como no DAE."].forEach(t=>{doc.text(pdfTxt(t),M,y);y+=3.8}); y+=2;
+  const fund=[]; rows.forEach(r=>r.legal.fund.forEach(f=>{const t=f.replace(/^NCM \S+ /,"NCM "+ncmFmt(r.cls.ncmUso)+" ");if(!fund.includes(t))fund.push(t)}));
+  const obs=[]; rows.forEach(r=>r.legal.conferir.forEach(x=>{const t=`NF ${r.n.nNF} it. ${r.it.nItem}: ${x}`;if(!obs.includes(t))obs.push(t)}));
+  const fora=calc.flatMap(c=>c.rows.filter(r=>r.status==="st_ba"||r.status==="retida").map(r=>`NF ${c.n.nNF} it. ${r.it.nItem} (NCM ${ncmFmt(onlyDigits(r.it.ncm))}): ${r.status==="retida"?"ST retida pelo fornecedor":"sujeito à ST — antecipação total"} — fora da antecipação parcial.`));
+  const normas=BASE_BA?BASE_BA.normas.map(n=>`${n.ref}: ${n.txt}`):[];
+  const secs=[["Fundamentação legal aplicada",fund],["Itens excluídos da antecipação parcial",fora],["Normas de referência",normas]]; if(obs.length) secs.push(["Pontos de atenção",obs]);
+  for(const [t,list] of secs){ if(!list.length)continue; if(y>185){doc.addPage();y=16}
+    doc.setFont("helvetica","bold");doc.setFontSize(9.5);doc.setTextColor(...ink);doc.text(pdfTxt(t),M,y);y+=4.5;doc.setFont("helvetica","normal");doc.setFontSize(8.2);
+    for(const l of list){const lines=doc.splitTextToSize(pdfTxt("• "+l),W-2*M); if(y+lines.length*3.8>200){doc.addPage();y=16} doc.text(lines,M,y); y+=lines.length*3.8+0.8;} y+=2; }
+  const pages=doc.getNumberOfPages(); for(let i=1;i<=pages;i++){doc.setPage(i);doc.setFontSize(7.5);doc.setTextColor(...mute);doc.text(pdfTxt(`${cfg.razao||""} · antecipação parcial ${per.slice(5,7)}/${per.slice(0,4)} · página ${i}/${pages}`),M,205)}
+  await saveFile(`MEMORIA ANTECIPACAO PARCIAL ${per.slice(5,7)}-${per.slice(0,4)} ${(cfg.razao||"").split(" ")[0]}.pdf`,doc.output("blob"));
+}
+async function xlsxBA(per){
+  if(!window.XLSX){toast("Biblioteca da planilha não carregou");return}
+  const calc=per?baGuideCalc(per):calcAll();
+  const H=["Mês de Referência","Número do Documento","Data da Emissão","Chave","Valor do Documento","Nome do participante","CNPJ","UF Origem","Número do Item","Código do Produto/Item","Descrição do Produto/Item","Valor do Item","Valor do Desconto","CST ICMS","CFOP","Valor da Base de ICMS","Alíquota De ICMS","Valor do ICMS","Valor da Base Antecipação","Alíquota Antecipação","Valor Antecipação","Diferença","NCM","CEST","Classificação","Fundamento"];
+  const aoa=[H]; let row=2;
+  for(const {n,rows} of calc) for(const r of rows){ if(r.status!=="parcial") continue; const it=r.it, mes=new Date(periodoBA(n)+"-15T12:00:00").toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
+    aoa.push([mes.charAt(0).toUpperCase()+mes.slice(1),n.nNF,new Date(n.dhEmi.slice(0,10)+"T12:00:00"),n.chave,n.vNF,n.emit.nome,fmtCnpj(n.emit.cnpj),n.emit.uf,it.nItem,it.cProd,it.xProd,r2(it.vProd+(cfg.ipiNaBase?it.vIPI:0)+(cfg.freteNaBase?it.vFrete:0)),it.vDesc,(it.orig||"")+(it.cst||""),it.cfop,it.vBC,it.pICMS,it.vICMS,
+      {f:`L${row}-M${row}`},Math.round(r.carga*100)/10000,{f:`S${row}*T${row}`},{f:`MAX(0,U${row}-R${row})`},r.cls.ncmUso,it.cest,r.cls.origem==="regra"?"decisão cadastrada":r.cls.origem==="empresa"?"tabela da empresa":r.cls.origem==="anexo1"?"Anexo 1":"padrão",r.cls.cargaRef]); row++ }
+  if(row===2){toast("Nenhum item de antecipação parcial para exportar");return}
+  aoa.push([]); const t=[]; t[20]="TOTAL"; t[21]={f:`ROUND(SUM(V2:V${row-1}),2)`}; aoa.push(t);
+  const ws=XLSX.utils.aoa_to_sheet(aoa,{cellDates:true});
+  for(let rr=2;rr<row;rr++){ const d=ws["C"+rr]; if(d)d.z="dd/mm/yyyy"; ["E","L","M","P","R","S","U","V"].forEach(c=>{const x=ws[c+rr];if(x)x.z="#,##0.00"}); const a=ws["T"+rr]; if(a)a.z="0.0%" }
+  ws["!cols"]=H.map((h,i)=>({wch:[3,5,10].includes(i)?36:i===25?60:Math.max(10,h.length+2)}));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Antecipação parcial");
+  const buf=XLSX.write(wb,{bookType:"xlsx",type:"array"});
+  await saveFile(`ANTECIPACAO PARCIAL ${(cfg.razao||"").split(" ")[0]} ${per?per.slice(5,7)+"-"+per.slice(0,4):todayISO()}.xlsx`,new Blob([buf]));
+}
+function baConsultaCard(q){
+  if(!BASE_BA) return `<div class="note-card"><div><b>Base legal da BA carregando…</b></div></div>`;
+  const it={ncm:q.ncm,cest:q.cest,cProd:"",xProd:q.desc||""}; const c=classifyBA(it,{emit:{cnpj:""}}); const cv=ba5291(q.ncm), a=baAnexo1(q.ncm), dec=BASE_BA.decisoes[onlyDigits(q.ncm)];
+  return `<div class="note-card" style="background:var(--accent-soft)"><div><div class="row" style="gap:8px"><span class="pill ${c.tipo==="st"?"neu":"acc"}">${c.tipo==="st"?"ST — antecipação total":"antecipação parcial"}</span><b>${c.tipo==="st"?"Fora da antecipação parcial":"Alíquota "+pct(c.carga)}</b>${c.conferir.length?'<span class="pill warn">conferir</span>':'<span class="pill ok">classificado</span>'}</div>
+    <ul class="steps" style="font-size:13px;margin-top:6px">${c.fund.map(f=>`<li>${esc(f)}</li>`).join("")}${c.conferir.map(f=>`<li style="color:var(--warn)">${esc(f)}</li>`).join("")}</ul>
+    <div class="faint" style="font-size:12px">Tabela da empresa: ${dec?esc(dec):"—"} · Anexo 1 RICMS-BA: ${a?esc("seg. "+a.seg+" ("+ncmFmt(a.p)+")"):"não consta"} · Conv. 52/91: ${cv?esc("Anexo "+(cv.anexo==="a2"?"II":"I")+", item "+cv.item+" → "+pct(cv.carga)):"não consta"}</div></div>
+    <div>${canEditRules?`<button class="primary" data-bacons="parcial">Gravar: tributado ${pct(c.tipo==="parcial"?c.carga:(cv?cv.carga:20.5))}</button> <button data-bacons="st">Gravar: ST</button>`:""}</div></div>`;
+}
+document.addEventListener("click",e=>{const b=e.target.closest("[data-bacons]");if(!b)return;const q=readQ(),ncm=onlyDigits(q.ncm);if(ncm.length<4){toast("Informe o NCM");return}
+  const tipo=b.dataset.bacons, cv=ba5291(ncm), carga=tipo==="parcial"?(cv?cv.carga:(num(cfg.aliqPadrao)||20.5)):0;
+  const r={id:"ba-"+ncm+"-"+Date.now().toString(36),uf:"BA",ncm,cProd:"",cnpjEmit:"",descricao:(q.desc||"").slice(0,60),tipoBA:tipo,carga,mva:0,aliqInterna:0,fcp:0,reducao:0,ajustar:false,validada:true,fonte:(tipo==="st"?`NCM ${ncmFmt(ncm)} sujeito à ST na BA`:`NCM ${ncmFmt(ncm)} tributado — antecipação parcial ${pct(carga)}`)+` — consulta em ${new Date().toLocaleDateString("pt-BR")}.`};
+  rules.push(r);saveRule(r);renderAll();runLocal();toast("Classificação gravada")});
+function renderBaseBA(){
+  const cb=$("#cBase"); if(cb) cb.textContent=BASE_BA?Object.keys(BASE_BA.decisoes).length:"!";
+  if(!BASE_BA){$("#baseMeta").textContent=BASE_BA_ERR?"Não foi possível carregar a base BA: "+BASE_BA_ERR:"Carregando…";return}
+  $("#baseMeta").innerHTML=`${esc(BASE_BA.meta.fonte)} · extraído em ${brDate(BASE_BA.meta.extraidoEm)} · <a href="${esc(BASE_BA.meta.urlAnexo1)}" target="_blank" rel="noopener">Anexo 1 ↗</a> · <a href="${esc(BASE_BA.meta.url5291)}" target="_blank" rel="noopener">Conv. 52/91 ↗</a> · <a href="${esc(BASE_BA.meta.url142)}" target="_blank" rel="noopener">Conv. 142/18 ↗</a>`;
+  const sel=$("#baseSeg"); if(sel.dataset.mode!=="BA"){sel.dataset.mode="BA";sel.innerHTML='<option value="">Todas as fontes</option><option value="dec">Tabela da empresa (ST / tributado)</option><option value="a2">Conv. 52/91 Anexo II — carga 5,6%</option><option value="a1">Conv. 52/91 Anexo I — carga 8,8%</option>'+Object.entries(BASE_BA.anexo1).map(([k,v])=>`<option value="s${k}">Anexo 1 seg. ${k} — ${esc(v.nome)}</option>`).join("")}
+  const qd=onlyDigits($("#baseQ").value), sg=sel.value, rows=[];
+  if(!sg||sg==="dec") Object.entries(BASE_BA.decisoes).forEach(([n,v])=>rows.push(["Tabela da empresa",n,v==="ST"?"ST (antecipação total)":"Tributado (antecipação parcial)"]));
+  if(!sg||sg==="a2") BASE_BA.conv5291.a2.forEach(([i,ns])=>ns.forEach(n=>rows.push(["Conv. 52/91 Anexo II, item "+i,n,"Carga 5,6%"])));
+  if(!sg||sg==="a1") BASE_BA.conv5291.a1.forEach(([i,ns])=>ns.forEach(n=>rows.push(["Conv. 52/91 Anexo I, item "+i,n,"Carga 8,8%"])));
+  Object.entries(BASE_BA.anexo1).forEach(([k,v])=>{ if(!sg||sg==="s"+k) v.ncms.forEach(n=>rows.push(["Anexo 1 RICMS-BA seg. "+k,n,"ST — "+v.nome])) });
+  const f=rows.filter(r=>!qd||r[1].startsWith(qd)||qd.startsWith(r[1]));
+  $("#baseCount").textContent=`${f.length} registro(s)`+(f.length>300?" — mostrando os 300 primeiros; refine a busca":"");
+  $("#baseTbl").innerHTML=`<thead><tr><th>Fonte</th><th>NCM</th><th>Tratamento</th></tr></thead><tbody>`+f.slice(0,300).map(r=>`<tr><td style="font-size:12px">${esc(r[0])}</td><td class="mono">${ncmFmt(r[1])}</td><td>${esc(r[2])}</td></tr>`).join("")+"</tbody>";
+  $("#normasList").innerHTML=BASE_BA.normas.map(n=>`<div class="note-card"><div><b>${esc(n.ref)}</b><div class="muted" style="font-size:13px">${esc(n.txt)}</div></div><div><a class="btn" href="${esc(n.url)}" target="_blank" rel="noopener">Ler ↗</a></div></div>`).join("");
+}
+/* empresas */
+function renderEmpSel(){
+  const el=$("#companyLine"); if(!el) return;
+  const ids=Object.keys(empresas); if(!ids.includes(empId)) ids.unshift(empId);
+  const nm=id=>{const e=id===empId?cfg:{...(id==="empresa"?DEFAULT_CFG:{}),...empresas[id]};return (e.razao||"Nova empresa").split(" ").slice(0,3).join(" ")+" · "+(e.uf||"?")};
+  el.innerHTML=`<label class="label" for="empSel" style="display:block">Empresa</label><select id="empSel" style="max-width:280px">${ids.map(id=>`<option value="${esc(id)}" ${id===empId?"selected":""}>${esc(nm(id))}</option>`).join("")}</select><br><span class="mono">${esc(fmtCnpj(cfg.cnpj))}</span> · ${isBA()?"antecipação parcial":"ICMS-ST"}`;
+}
+document.addEventListener("change",e=>{ if(e.target.id!=="empSel") return; empId=e.target.value; applyEmp(); const s=$("#baseSeg"); if(s){s.dataset.mode="";s.innerHTML='<option value="">Todos os segmentos</option>'} renderCfg(); renderAll(); renderBase(); toast("Empresa: "+(cfg.razao||empId)) });
+async function novaEmpresa(){ const id="empresa-"+Date.now().toString(36); empresas[id]={...BLANK_CFG,razao:"NOVA EMPRESA"}; empId=id; applyEmp(); lsSet("st_empresas",empresas);
+  if(dbReady){try{await db.doc("config/"+id).set(cfg)}catch(e){toast("Só neste navegador: "+(e.code||e.message))}} renderEmpSel(); renderCfg(); renderAll(); setTab("config"); toast("Preencha os dados da nova empresa") }
+
+$("#btnNovaEmp").addEventListener("click",novaEmpresa);
 /* boot */
+{const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-1);const el=$("#refPerImp");if(el)el.value=d.toISOString().slice(0,7);}
 hist=lsGet("st_hist",{});
 renderCfg();
 sortNotes(); renderAll();
 try{const t=localStorage.getItem("st_tab");if(t)setTab(t)}catch(e){}
 initDb();
 loadBase();
+loadBaseBA();
 })();
 </script>
 <script>
