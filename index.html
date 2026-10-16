@@ -1121,17 +1121,19 @@ function vizinhoBA(ncm){
     const vs=new Set(ks.map(k=>d[k])); if(vs.size===1&&(nv===6||ks.length>=2)) return {tipo:d[ks[0]]==="ST"?"st":"parcial",nivel:nv,lista:ks.slice(0,4).map(k=>ncmFmt(k)+" "+(d[k]==="ST"?"ST":"TRIBUTADO")).join(", ")+(ks.length>4?"…":"")};
     if(nv===6) return null; }
   return null }
+function histBA(ncm){ const h=BASE_BA&&BASE_BA.historico&&BASE_BA.historico.ncm[ncm]; if(!h) return "";
+  const m=x=>x.map(p=>p.slice(5)+"/"+p.slice(0,4)).join(", "); const mv=Object.keys(h.mva||{});
+  return `Histórico do analista (05–08/2026): ${h.st.length?"ST em "+m(h.st)+(mv.length?" (MVA original "+mv.map(v=>pct(+v)).join(" / ")+")":""):""}${h.st.length&&h.trib.length?"; ":""}${h.trib.length?"tributado em "+m(h.trib):""}.` }
 function classifyBA(it,n){
   const ncm=onlyDigits(it.ncm), fund=[], conferir=[]; let tipo="parcial", origem="padrao";
   const rule=baRuleFor(it,n);
   const ncmUso=rule&&rule.ncmProprio?onlyDigits(rule.ncmProprio):ncm;
   if(rule&&rule.tipoBA){ tipo=rule.tipoBA==="st"?"st":"parcial"; origem="regra"; fund.push((rule.cProd?`Decisão por produto (cód. ${rule.cProd}${rule.ncmProprio?`, NCM próprio ${ncmFmt(ncmUso)}`:""})`:`Decisão cadastrada para o NCM ${ncmFmt(onlyDigits(rule.ncm))}`)+": "+(rule.fonte||(tipo==="st"?"sujeito à ST (antecipação total)":"tributado — antecipação parcial"))); if(!rule.validada) conferir.push("Regra ainda não validada.") }
-  else if(BASE_BA&&BASE_BA.decisoes[ncmUso]){ tipo=BASE_BA.decisoes[ncmUso]==="ST"?"st":"parcial"; origem="empresa"; fund.push(`NCM ${ncmFmt(ncmUso)} classificado como ${tipo==="st"?"ST (antecipação total)":"tributado (antecipação parcial)"} na tabela de regras tributárias da empresa (consulta Econet).`) }
+  else if(BASE_BA&&BASE_BA.decisoes[ncmUso]){ tipo=BASE_BA.decisoes[ncmUso]==="ST"?"st":"parcial"; origem="empresa"; const fo=BASE_BA.decisoesFonte&&BASE_BA.decisoesFonte[ncmUso]; fund.push(`NCM ${ncmFmt(ncmUso)} classificado como ${tipo==="st"?"ST (antecipação total)":"tributado (antecipação parcial)"} na base do sistema${fo?": "+fo:" (tabela de regras tributárias da empresa, consulta Econet)."}`); const hi=histBA(ncmUso); if(hi) fund.push(hi) }
   else { const a=baAnexo1(ncmUso), ev=evidenciaXMLBA(it), viz=vizinhoBA(ncmUso);
     if(ev){ tipo="st"; origem="xml"; fund.push(ev) }
-    else if(viz){ tipo=viz.tipo; origem="vizinho"; fund.push(`NCM ${ncmFmt(ncmUso)} não está na tabela da empresa, mas ${viz.nivel===6?"a subposição":"a posição"} ${viz.nivel===6?ncmFmt(ncmUso).slice(0,7):ncmUso.slice(0,4)} está classificada como ${viz.tipo==="st"?"ST":"TRIBUTADO"} (${viz.lista}) — mesma classificação aplicada${a?` (o Anexo 1, seg. ${a.seg}, alcança a posição apenas para o uso descrito no Anexo; a tabela da empresa prevalece)`:""}.`) }
     else if(!a){ tipo="parcial"; origem="foraanexo"; fund.push(`NCM ${ncmFmt(ncmUso)} não consta no Anexo 1 do RICMS-BA (2026) em nenhum segmento, a NF não traz CEST e o fornecedor não reteve ST: mercadoria tributada — antecipação parcial (a antecipação total só alcança as mercadorias do Anexo 1, Lei 7.014/96 art. 8º §4º).`) }
-    else if(a){ tipo="st"; origem="anexo1"; fund.push(`NCM ${ncmFmt(ncmUso)} consta no Anexo 1 do RICMS-BA (2026), segmento ${a.seg} — ${a.nome} (posição ${ncmFmt(a.p)}).`); conferir.push(`Enquadrado como ST pela lista do Anexo 1 (seg. ${a.seg}) — confirmar se a descrição do produto corresponde ao item do Anexo.`) }
+    else if(a){ tipo="st"; origem="anexo1"; fund.push(`NCM ${ncmFmt(ncmUso)} consta no Anexo 1 do RICMS-BA (2026), segmento ${a.seg} — ${a.nome} (posição ${ncmFmt(a.p)}).`); conferir.push(`Enquadrado como ST pela lista do Anexo 1 (seg. ${a.seg}) — confirmar se a descrição do produto corresponde ao item do Anexo.${viz?` Atenção: NCMs parecidos na base estão como ${viz.tipo==="st"?"ST":"TRIBUTADO"} (${viz.lista}) — não foi aplicado automaticamente porque NCM vizinho não garante o mesmo enquadramento.`:""}`) }
     else { origem="padrao"; fund.push(`NCM ${ncmFmt(ncmUso)} não consta no Anexo 1 do RICMS-BA nem na tabela da empresa: tratado como tributado (antecipação parcial).`); conferir.push(`NCM ${ncmFmt(ncmUso)} sem classificação cadastrada — confirmar que não está sujeito à ST na BA.`) } }
   let carga=0, cargaRef="";
   if(tipo==="parcial"){
@@ -1431,7 +1433,7 @@ function relData(per,raw){
   const sm={}; ok.forEach(x=>x.sr.forEach(r=>{const k=r.cls.ncmUso+"|"+r.st.mva; const g=(sm[k]=sm[k]||{ncm:r.cls.ncmUso,mva:r.st.mva,itens:0,bc:0,icms:0,ded:0,dif:0}); g.itens++; g.bc+=r.st.bc; g.icms+=r.st.icms; g.ded+=r.st.proprio+r.st.retido; g.dif+=r.st.raw}));
   return {per,notas,ok,tot,forn:Object.values(fm).sort((a,b)=>b.dif-a.dif),ncm:Object.values(nm).sort((a,b)=>b.dif-a.dif),ncmST:Object.values(sm).sort((a,b)=>b.dif-a.dif),guia:guiaDoMes(per),guiaST:hist[`BAST-${rootOf(cfg.cnpj)}-${per}`],venc:vencBA(per)};
 }
-const ORIG_LBL={regra:"decisão cadastrada",empresa:"tabela da empresa",anexo1:"Anexo 1",padrao:"padrão",xml:"evidência na NF-e (CST/CEST)",vizinho:"NCM semelhante na tabela da empresa",foraanexo:"fora do Anexo 1 (automático)"};
+const ORIG_LBL={regra:"decisão cadastrada",empresa:"base do sistema",anexo1:"Anexo 1",padrao:"padrão",xml:"evidência na NF-e (CST/CEST)",vizinho:"NCM semelhante na tabela da empresa",foraanexo:"fora do Anexo 1 (automático)"};
 function daePill(h,v){return h?`<span class="pill ${h.status==="paga"?"ok":"acc"}">${h.status==="paga"?"pago":"emitido"}</span> <span class="mono faint" style="font-size:11px">${esc(h.controle||"")}</span>${h.valor!=null&&Math.abs(h.valor-v)>0.009?` <span class="pill warn">DAE R$ ${fmt(h.valor)} ≠ apuração</span>`:""}`:(v>0?'<span class="pill warn">a emitir</span>':"—")}
 function daeTxt(h,v){return h?(h.status==="paga"?"DAE pago":"DAE emitido")+(h.controle?" · "+esc(h.controle):""):(v>0?"DAE a emitir":"—")}
 function relSituacao(x){return x.pend?"fora do mês — aguardando validação":x.fora?`fora do mês (emitida ${apurLbl((x.n.dhEmi||"").slice(0,7))}) — validada${x.n.validMes&&x.n.validMes.por?" por "+x.n.validMes.por:""}${x.n.validMes?" em "+brDate(x.n.validMes.em):""}`:"no mês"}
