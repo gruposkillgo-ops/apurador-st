@@ -1040,7 +1040,11 @@ async function importFiles(files){
   for(const f of files){try{const txt=await f.text(); const n=parseNFe(txt,f.name); const old=notes.find(x=>x.id===n.id);
       if(isBA()){ const emi=(n.dhEmi||"").slice(0,7); n.refPer=ap||(old&&old.refPer)||emi; if(old&&old.validMes&&old.refPer===n.refPer) n.validMes=old.validMes; if(n.refPer!==emi&&!n.validMes&&notaDaEmpresa(n)) foraMes.push(n.nNF+" ("+apurLbl(emi)+")"); }
       n.temXml=true; notes=notes.filter(x=>x.id!==n.id);notes.push(n);ok++;pushNote(n);pushXml(n.id,txt,rootOf(n.dest.cnpj))}catch(e){err.push(f.name+": "+e.message)}}
-  sortNotes();saveNotes();const m=$("#importMsg");m.hidden=false;const fora=notes.filter(n=>!notaDaEmpresa(n)&&files.some(f=>n.fileName===f.name)).length;m.innerHTML=`${ok} nota(s) importada(s)${ap?" na apuração "+apurLbl(ap):""}.`+(foraMes.length?` <span style="color:var(--warn)"><b>Atenção:</b> ${foraMes.length} nota(s) emitida(s) fora do mês da apuração — NF ${esc(foraMes.join(", "))}. Confira e clique em <b>Validar</b> (em Pendências ou no cartão da nota); até lá elas não entram na guia.</span>`:"")+(fora?` <span style="color:var(--warn)">${fora} não são da empresa selecionada (${esc(cfg.razao||'')}) — troque a empresa no topo para vê-las.</span>`:"")+(err.length?` <span style="color:var(--bad)">Falharam: ${esc(err.join("; "))}</span>`:"");renderAll();
+  let lote="";
+  if(isBA()&&ap){ const imp=notes.filter(n=>notaDaEmpresa(n)&&files.some(f=>n.fileName===f.name)), cnt={}; imp.forEach(n=>{const e=(n.dhEmi||"").slice(0,7);cnt[e]=(cnt[e]||0)+1});
+    const top=Object.entries(cnt).sort((a,b)=>b[1]-a[1])[0]; if(top&&top[0]!==ap&&top[1]>imp.length/2){ const ids=imp.filter(n=>(n.dhEmi||"").slice(0,7)===top[0]).map(n=>n.id); window.__lote=ids;
+      lote=`<div class="callout" style="margin-top:8px"><b>A maioria das notas (${top[1]} de ${imp.length}) foi emitida em ${apurLbl(top[0])}, mas a apuração selecionada é ${apurLbl(ap)}.</b> <button class="primary" data-movelote="${top[0]}">Lançar essas ${top[1]} notas na apuração ${apurLbl(top[0])}</button> <span class="muted">ou mantenha em ${apurLbl(ap)} e valide uma a uma.</span></div>` } }
+  sortNotes();saveNotes();const m=$("#importMsg");m.hidden=false;const fora=notes.filter(n=>!notaDaEmpresa(n)&&files.some(f=>n.fileName===f.name)).length;m.innerHTML=`${ok} nota(s) importada(s)${ap?" na apuração "+apurLbl(ap):""}.`+(foraMes.length?` <span style="color:var(--warn)"><b>Atenção:</b> ${foraMes.length} nota(s) emitida(s) fora do mês da apuração — NF ${esc(foraMes.join(", "))}. Confira e clique em <b>Validar</b> (em Pendências ou no cartão da nota); até lá elas não entram na guia.</span>`:"")+(fora?` <span style="color:var(--warn)">${fora} não são da empresa selecionada (${esc(cfg.razao||'')}) — troque a empresa no topo para vê-las.</span>`:"")+(err.length?` <span style="color:var(--bad)">Falharam: ${esc(err.join("; "))}</span>`:"")+lote;renderAll();
 }
 $("#fileIn").addEventListener("change",e=>{importFiles([...e.target.files]);e.target.value=""});
 const drop=$("#drop");
@@ -1105,14 +1109,29 @@ function baRuleFor(it,n){
   if(prod) return prod;
   const ncm=onlyDigits(it.ncm);
   return rs.filter(r=>!r.cProd&&onlyDigits(r.ncm)&&ncm.startsWith(onlyDigits(r.ncm))).sort((a,b)=>onlyDigits(b.ncm).length-onlyDigits(a.ncm).length)[0]||null }
+/* motor interno de decisão — sem consulta externa */
+function evidenciaXMLBA(it){
+  const cst=String(it.cst||""), cest=onlyDigits(it.cest||"");
+  if(["10","30","60","70"].includes(cst.slice(-2))&&cst.length<=2 || ["201","202","203","500"].includes(cst)) return `A própria NF-e indica substituição tributária (CST/CSOSN ${cst}) — mercadoria sujeita à ST.`;
+  if(cest.length===7){ const a=baAnexo1(onlyDigits(it.ncm)); if(a) return `A NF-e informa CEST ${cest.replace(/(\d{2})(\d{3})(\d{2})/,"$1.$2.$3")} e o NCM consta no Anexo 1 do RICMS-BA (seg. ${a.seg} — ${a.nome}): mercadoria sujeita à ST.`; }
+  return null }
+function vizinhoBA(ncm){
+  if(!BASE_BA) return null; const d=BASE_BA.decisoes;
+  for(const nv of [6,4]){ const p=ncm.slice(0,nv); const ks=Object.keys(d).filter(k=>k!==ncm&&k.startsWith(p)); if(!ks.length) continue;
+    const vs=new Set(ks.map(k=>d[k])); if(vs.size===1&&(nv===6||ks.length>=2)) return {tipo:d[ks[0]]==="ST"?"st":"parcial",nivel:nv,lista:ks.slice(0,4).map(k=>ncmFmt(k)+" "+(d[k]==="ST"?"ST":"TRIBUTADO")).join(", ")+(ks.length>4?"…":"")};
+    if(nv===6) return null; }
+  return null }
 function classifyBA(it,n){
   const ncm=onlyDigits(it.ncm), fund=[], conferir=[]; let tipo="parcial", origem="padrao";
   const rule=baRuleFor(it,n);
   const ncmUso=rule&&rule.ncmProprio?onlyDigits(rule.ncmProprio):ncm;
   if(rule&&rule.tipoBA){ tipo=rule.tipoBA==="st"?"st":"parcial"; origem="regra"; fund.push((rule.cProd?`Decisão por produto (cód. ${rule.cProd}${rule.ncmProprio?`, NCM próprio ${ncmFmt(ncmUso)}`:""})`:`Decisão cadastrada para o NCM ${ncmFmt(onlyDigits(rule.ncm))}`)+": "+(rule.fonte||(tipo==="st"?"sujeito à ST (antecipação total)":"tributado — antecipação parcial"))); if(!rule.validada) conferir.push("Regra ainda não validada.") }
   else if(BASE_BA&&BASE_BA.decisoes[ncmUso]){ tipo=BASE_BA.decisoes[ncmUso]==="ST"?"st":"parcial"; origem="empresa"; fund.push(`NCM ${ncmFmt(ncmUso)} classificado como ${tipo==="st"?"ST (antecipação total)":"tributado (antecipação parcial)"} na tabela de regras tributárias da empresa (consulta Econet).`) }
-  else { const a=baAnexo1(ncmUso);
-    if(a){ tipo="st"; origem="anexo1"; fund.push(`NCM ${ncmFmt(ncmUso)} consta no Anexo 1 do RICMS-BA (2026), segmento ${a.seg} — ${a.nome} (posição ${ncmFmt(a.p)}).`); conferir.push(`Enquadrado como ST pela lista do Anexo 1 (seg. ${a.seg}) — confirmar se a descrição do produto corresponde ao item do Anexo.`) }
+  else { const a=baAnexo1(ncmUso), ev=evidenciaXMLBA(it), viz=vizinhoBA(ncmUso);
+    if(ev){ tipo="st"; origem="xml"; fund.push(ev) }
+    else if(viz){ tipo=viz.tipo; origem="vizinho"; fund.push(`NCM ${ncmFmt(ncmUso)} não está na tabela da empresa, mas ${viz.nivel===6?"a subposição":"a posição"} ${viz.nivel===6?ncmFmt(ncmUso).slice(0,7):ncmUso.slice(0,4)} está classificada como ${viz.tipo==="st"?"ST":"TRIBUTADO"} (${viz.lista}) — mesma classificação aplicada${a?` (o Anexo 1, seg. ${a.seg}, alcança a posição apenas para o uso descrito no Anexo; a tabela da empresa prevalece)`:""}.`) }
+    else if(!a){ tipo="parcial"; origem="foraanexo"; fund.push(`NCM ${ncmFmt(ncmUso)} não consta no Anexo 1 do RICMS-BA (2026) em nenhum segmento, a NF não traz CEST e o fornecedor não reteve ST: mercadoria tributada — antecipação parcial (a antecipação total só alcança as mercadorias do Anexo 1, Lei 7.014/96 art. 8º §4º).`) }
+    else if(a){ tipo="st"; origem="anexo1"; fund.push(`NCM ${ncmFmt(ncmUso)} consta no Anexo 1 do RICMS-BA (2026), segmento ${a.seg} — ${a.nome} (posição ${ncmFmt(a.p)}).`); conferir.push(`Enquadrado como ST pela lista do Anexo 1 (seg. ${a.seg}) — confirmar se a descrição do produto corresponde ao item do Anexo.`) }
     else { origem="padrao"; fund.push(`NCM ${ncmFmt(ncmUso)} não consta no Anexo 1 do RICMS-BA nem na tabela da empresa: tratado como tributado (antecipação parcial).`); conferir.push(`NCM ${ncmFmt(ncmUso)} sem classificação cadastrada — confirmar que não está sujeito à ST na BA.`) } }
   let carga=0, cargaRef="";
   if(tipo==="parcial"){
@@ -1143,7 +1162,13 @@ function calcParcialBA(n,it){
 const BA_MVA_SEED=[["7318",55,"parafusos, porcas e arruelas"],["848140",45,"válvulas de segurança/alívio"]];
 function mvaBA(c){
   if(c.rule&&num(c.rule.mva)>0) return {mva:num(c.rule.mva),ref:`MVA original ${pct(num(c.rule.mva))} definida na regra cadastrada${c.rule.fonte?" ("+c.rule.fonte.slice(0,120)+")":""}`,ok:true};
-  const ncm=c.ncmUso, sd=BA_MVA_SEED.filter(([p])=>ncm.startsWith(p)).sort((a,b)=>b[0].length-a[0].length)[0];
+  const ncm=c.ncmUso;
+  const s1=BASE_BA&&BASE_BA.anexo1["1"]?BASE_BA.anexo1["1"].ncms.filter(p=>ncm.startsWith(p)).sort((x,y)=>y.length-x.length)[0]:null;
+  if(s1) return {mva:71.78,ref:`MVA original 71,78% — peças e acessórios para veículos automotores, Anexo 1 do RICMS-BA, seg. 1 (Conv. ICMS 142/18, Anexo II; Prot. ICMS 41/08 e 97/10, "demais casos"), posição ${ncmFmt(s1)}.`,ok:true};
+  if(BASE_BA&&BASE_BA.anexo1Mva){ const hits=BASE_BA.anexo1Mva.flatMap(([item,ns,m])=>ns.filter(p=>ncm.startsWith(p)).map(p=>({item,p,m}))); if(hits.length){ const L=Math.max(...hits.map(h=>h.p.length)), best=hits.filter(h=>h.p.length===L), ms=[...new Set(best.map(h=>h.m))];
+    if(ms.length===1) return {mva:ms[0],ref:`MVA original ${pct(ms[0])} — Anexo 1 do RICMS-BA (2026), item ${best.map(h=>h.item).join(", ")} (posição ${ncmFmt(best[0].p)}).`,ok:true};
+    const m0=Math.max(...ms); return {mva:m0,ref:`MVA original ${pct(m0)} — Anexo 1 do RICMS-BA (2026), itens ${best.map(h=>h.item+" = "+pct(h.m)).join("; ")}.`,ok:false,amb:`O NCM ${ncmFmt(ncm)} aparece em mais de um item do Anexo 1 com MVA diferente (${best.map(h=>h.item+": "+pct(h.m)).join("; ")}) — usada a maior; confirme pela descrição do produto e cadastre em Regras BA.`} } }
+  const sd=BA_MVA_SEED.filter(([p])=>ncm.startsWith(p)).sort((a,b)=>b[0].length-a[0].length)[0];
   if(sd) return {mva:sd[1],ref:`MVA original ${pct(sd[1])} — ${sd[2]}, Anexo 1 do RICMS-BA (segmento materiais de construção), conforme memória de cálculo da empresa.`,ok:true};
   const a=baAnexo1(ncm);
   if(a&&a.seg==="1") return {mva:71.78,ref:`MVA original 71,78% — peças e acessórios para veículos automotores, Anexo 1 do RICMS-BA (Conv. ICMS 142/18, Anexo II), posição ${ncmFmt(a.p)}.`,ok:true};
@@ -1155,7 +1180,7 @@ function calcSTBA(n,it,c,out){
   const base=it.vProd+it.vIPI+it.vFrete+it.vSeg+it.vOutro-it.vDesc;
   const aj=Math.round((inter>0?((1+m.mva/100)*(1-inter/100)/(1-aliq/100)-1):m.mva/100)*10000)/10000; // MVA ajustada com 4 casas, como na memória da empresa
   const bc=base*(1+aj), st=bc*aliq/100, dif=st-(it.vICMS||0)-(it.vICMSST||0);
-  if(!m.ok) c.conferir.push(`MVA não cadastrada para o NCM ${ncmFmt(c.ncmUso)}: usada a MVA padrão de ${pct(m.mva)} — confirme no Anexo 1 do RICMS-BA e cadastre em Regras BA.`);
+  if(m.amb) c.conferir.push(m.amb); else if(!m.ok) c.conferir.push(`MVA não cadastrada para o NCM ${ncmFmt(c.ncmUso)}: usada a MVA padrão de ${pct(m.mva)} — confirme no Anexo 1 do RICMS-BA e cadastre em Regras BA.`);
   c.fund.push(m.ref,`Antecipação total (ST): BC ST = (valor do item + IPI + frete/seguro/outras − desconto) × (1 + MVA ajustada ${pct(aj*100)}${inter>0?`; ajuste pela alíquota interestadual de ${pct(inter)}`:"; sem ajuste (NF sem ICMS destacado)"}); ICMS ST = BC ST × ${pct(aliq)} − ICMS da NF − ST retido pelo fornecedor (negativo = zero).`);
   Object.assign(out,{st:{base,mva:m.mva,mvaRef:m.ref,inter,aj,aliq,bc,icms:st,proprio:it.vICMS||0,retido:it.vICMSST||0,dif,raw:Math.max(0,dif)}});
 }
@@ -1229,8 +1254,6 @@ function renderPendBA(calc){
   Object.values(grp).forEach(({r,n,notas})=>{const i=PEND_BA.push({r,n})-1; const st=r.status==="st_ba";
     P.push({lvl:"warn",t:`${st?"ST na BA?":"Conferir classificação"}: NCM <span class="mono">${esc(r.cls.ncmUso)}</span>${st?"":` · alíquota ${pct(r.carga)}`}`,d:`${esc(r.it.xProd.slice(0,60))} · NF ${[...notas].join(", ")} — ${r.legal.conferir.map(esc).join(" ")}`,
       a:`<div class="row">${canEditRules?`<button class="primary" data-baok="parcial|${i}">Confirmar: tributado${st?"":" "+pct(r.carga)}</button><button data-baok="st|${i}">Confirmar: ST</button>`:""}<button data-baanalyze="${i}">Analisar NCM</button></div>`})});
-  const neg=[]; calc.forEach(({n,rows})=>rows.filter(r=>r.negativo).forEach(r=>neg.push(`NF ${n.nNF} item ${r.it.nItem}`)));
-  if(neg.length) P.push({lvl:"warn",t:`${neg.length} item(ns) com ICMS destacado maior que a antecipação`,d:esc(neg.slice(0,8).join(", "))+(neg.length>8?"…":"")+" — diferença negativa considerada zero (não abate dos demais itens).",a:""});
   const cfA={}; calc.forEach(({n,rows})=>rows.filter(r=>r.cfopAlert).forEach(r=>{(cfA[n.nNF]=cfA[n.nNF]||{r,c:new Set()}).c.add(r.it.cfop)}));
   Object.entries(cfA).forEach(([nf,{r,c}])=>P.push({lvl:"warn",t:`NF ${esc(nf)}: CFOP ${[...c].join(", ")}`,d:esc(r.cfopAlert),a:""}));
   rulesAtivas().filter(r=>!r.validada).forEach(r=>P.push({lvl:"warn",t:`Validar regra BA · NCM <span class="mono">${esc(r.ncm)}</span>${r.cProd?` · produto ${esc(r.cProd)}`:""}`,d:esc(r.fonte||"—"),a:canEditRules?`<button data-validate="${esc(r.id)}">Marcar como validada</button>`:""}));
@@ -1330,7 +1353,7 @@ function itensSheetBA(calc){
   const aoa=[H]; let row=2;
   for(const {n,rows} of calc) for(const r of rows){ if(r.status!=="parcial") continue; const it=r.it, mes=new Date(periodoBA(n)+"-15T12:00:00").toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
     aoa.push([mes.charAt(0).toUpperCase()+mes.slice(1),n.nNF,new Date(n.dhEmi.slice(0,10)+"T12:00:00"),n.chave,n.vNF,n.emit.nome,fmtCnpj(n.emit.cnpj),n.emit.uf,it.nItem,it.cProd,it.xProd,r2(it.vProd+(cfg.ipiNaBase?it.vIPI:0)+(cfg.freteNaBase?it.vFrete:0)),it.vDesc,(it.orig||"")+(it.cst||""),it.cfop,it.vBC,it.pICMS,it.vICMS,
-      {f:`L${row}-M${row}`},Math.round(r.carga*100)/10000,{f:`S${row}*T${row}`},{f:`MAX(0,U${row}-R${row})`},r.cls.ncmUso,it.cest,r.cls.origem==="regra"?"decisão cadastrada":r.cls.origem==="empresa"?"tabela da empresa":r.cls.origem==="anexo1"?"Anexo 1":"padrão",r.cls.cargaRef]); row++ }
+      {f:`L${row}-M${row}`},Math.round(r.carga*100)/10000,{f:`S${row}*T${row}`},{f:`MAX(0,U${row}-R${row})`},r.cls.ncmUso,it.cest,(ORIG_LBL[r.cls.origem]||r.cls.origem),r.cls.cargaRef]); row++ }
   if(row===2) return null;
   aoa.push([]); const t=[]; t[20]="TOTAL"; t[21]={f:`ROUND(SUM(V2:V${row-1}),2)`}; aoa.push(t);
   const ws=XLSX.utils.aoa_to_sheet(aoa,{cellDates:true});
@@ -1382,6 +1405,7 @@ document.addEventListener("click",e=>{
   const v=e.target.closest("[data-valmes]"); if(v){validarNotas(v.dataset.valmes.split("|"));return}
   const m=e.target.closest("[data-movemes]"); if(m){const n=notes.find(x=>x.id===m.dataset.movemes); if(n){n.refPer=(n.dhEmi||"").slice(0,7); delete n.validMes; saveNotes(); pushNote(n); renderAll(); toast("NF "+n.nNF+" movida para a apuração "+apurLbl(n.refPer))} return}
   const r=e.target.closest("[data-relmes]"); if(r){setApur(r.dataset.relmes,false);return}
+  const lt=e.target.closest("[data-movelote]"); if(lt){ const per=lt.dataset.movelote; (window.__lote||[]).forEach(id=>{const n=notes.find(x=>x.id===id); if(n){n.refPer=per; delete n.validMes; pushNote(n)}}); saveNotes(); $("#importMsg").hidden=true; setApur(per,false); toast("Notas lançadas na apuração "+apurLbl(per)); return}
 });
 function setApur(p,todas){ if(p&&/^\d{4}-\d{2}$/.test(p)) apur=p; if(todas!=null) apurTodas=todas; lsSet("st_apur",apur); lsSet("st_apur_all",apurTodas); $("#apurSel").value=apur; $("#apurAll").checked=apurTodas; renderAll(); }
 $("#apurSel").addEventListener("change",e=>setApur(e.target.value,false));
@@ -1407,7 +1431,7 @@ function relData(per,raw){
   const sm={}; ok.forEach(x=>x.sr.forEach(r=>{const k=r.cls.ncmUso+"|"+r.st.mva; const g=(sm[k]=sm[k]||{ncm:r.cls.ncmUso,mva:r.st.mva,itens:0,bc:0,icms:0,ded:0,dif:0}); g.itens++; g.bc+=r.st.bc; g.icms+=r.st.icms; g.ded+=r.st.proprio+r.st.retido; g.dif+=r.st.raw}));
   return {per,notas,ok,tot,forn:Object.values(fm).sort((a,b)=>b.dif-a.dif),ncm:Object.values(nm).sort((a,b)=>b.dif-a.dif),ncmST:Object.values(sm).sort((a,b)=>b.dif-a.dif),guia:guiaDoMes(per),guiaST:hist[`BAST-${rootOf(cfg.cnpj)}-${per}`],venc:vencBA(per)};
 }
-const ORIG_LBL={regra:"decisão cadastrada",empresa:"tabela da empresa",anexo1:"Anexo 1",padrao:"padrão"};
+const ORIG_LBL={regra:"decisão cadastrada",empresa:"tabela da empresa",anexo1:"Anexo 1",padrao:"padrão",xml:"evidência na NF-e (CST/CEST)",vizinho:"NCM semelhante na tabela da empresa",foraanexo:"fora do Anexo 1 (automático)"};
 function daePill(h,v){return h?`<span class="pill ${h.status==="paga"?"ok":"acc"}">${h.status==="paga"?"pago":"emitido"}</span> <span class="mono faint" style="font-size:11px">${esc(h.controle||"")}</span>${h.valor!=null&&Math.abs(h.valor-v)>0.009?` <span class="pill warn">DAE R$ ${fmt(h.valor)} ≠ apuração</span>`:""}`:(v>0?'<span class="pill warn">a emitir</span>':"—")}
 function daeTxt(h,v){return h?(h.status==="paga"?"DAE pago":"DAE emitido")+(h.controle?" · "+esc(h.controle):""):(v>0?"DAE a emitir":"—")}
 function relSituacao(x){return x.pend?"fora do mês — aguardando validação":x.fora?`fora do mês (emitida ${apurLbl((x.n.dhEmi||"").slice(0,7))}) — validada${x.n.validMes&&x.n.validMes.por?" por "+x.n.validMes.por:""}${x.n.validMes?" em "+brDate(x.n.validMes.em):""}`:"no mês"}
