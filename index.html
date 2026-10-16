@@ -84,6 +84,7 @@ window.__SITE=true;
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 :root{
   --ground:#EEF2F0; --surface:#FFFFFF; --sunk:#E3E9E6; --ink:#15201C; --ink2:#4A5A54; --ink3:#72827C;
@@ -207,7 +208,7 @@ details summary{cursor:pointer;color:var(--ink2)}
       <div class="seal" aria-hidden="true">ST</div>
       <div>
         <h1>Apurador ICMS-ST</h1>
-        <div class="faint" style="font-size:12px">XML da NF-e → cálculo com base legal → DAR SEFAZ-MT e memória em PDF</div>
+        <div class="faint" style="font-size:12px" id="subTit">XML da NF-e → cálculo com base legal → guia SEFAZ e memória em PDF</div>
       </div>
     </div>
     <div><div class="company" id="companyLine">Empresa não configurada</div><div class="company" id="dbStatus" style="font-size:11px">● conectando…</div></div>
@@ -216,6 +217,7 @@ details summary{cursor:pointer;color:var(--ink2)}
     <button role="tab" data-tab="notas" aria-selected="true">Notas<span class="count" id="cNotas">0</span></button>
     <button role="tab" data-tab="calculo" aria-selected="false">Cálculo<span class="count" id="cItens">0</span></button>
     <button role="tab" data-tab="guias" aria-selected="false">Guias<span class="count" id="cGuias">0</span></button>
+    <button role="tab" data-tab="relatorios" aria-selected="false" class="only-ba" hidden>Relatórios</button>
     <button role="tab" data-tab="regras" aria-selected="false"><span id="lblRegras">Regras MVA</span><span class="count" id="cRegras">0</span></button>
     <button role="tab" data-tab="consulta" aria-selected="false">Consulta NCM</button>
     <button role="tab" data-tab="base" aria-selected="false">Base legal<span class="count" id="cBase">…</span></button>
@@ -225,6 +227,9 @@ details summary{cursor:pointer;color:var(--ink2)}
 </header>
 
 <main>
+  <div class="panel" id="apurBar" hidden style="margin-bottom:18px"><div class="panel-b" style="display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between">
+    <div class="row" style="gap:8px;align-items:center"><span class="label" style="margin:0">Apuração</span><button class="ghost" id="apurPrev" aria-label="Mês anterior">◀</button><input type="month" id="apurSel" style="padding:3px 6px"><button class="ghost" id="apurNext" aria-label="Próximo mês">▶</button><label class="row" style="gap:6px;font-size:13px"><input type="checkbox" id="apurAll"> ver todas</label></div>
+    <div class="muted" id="apurInfo" style="font-size:13px"></div></div></div>
   <!-- NOTAS -->
   <section data-view="notas" style="display:grid;gap:18px">
     <div class="panel" id="pendPanel" hidden><div class="panel-h"><h2>Pendências</h2><span class="muted" id="pendCount"></span></div><div id="pendList"></div></div>
@@ -241,7 +246,7 @@ details summary{cursor:pointer;color:var(--ink2)}
           <span class="muted">ou clique para escolher — vários arquivos de uma vez (nfeProc ou NFe)</span>
           <input type="file" id="fileIn" accept=".xml,text/xml" multiple hidden>
         </label>
-        <label class="row only-ba" style="gap:8px;font-size:13px" hidden>Mês de referência das notas que vou importar (entrada) <input type="month" id="refPerImp" style="padding:3px 6px"></label>
+        <div class="muted only-ba" style="font-size:13px" hidden id="impHint"></div>
         <div id="importMsg" class="muted" hidden></div>
       </div>
       <div id="notesList"></div>
@@ -262,7 +267,7 @@ details summary{cursor:pointer;color:var(--ink2)}
       <div class="panel-b">
         <details>
           <summary>Como o cálculo é feito</summary>
-          <div class="formula only-ba" style="margin-top:10px" hidden>Base = valor do item + IPI* − desconto<br>Alíquota = alíquota interna da BA (20,5%) ou carga reduzida do Conv. ICMS 52/91 (Anexo II: 5,6% · Anexo I: 8,8%), conforme o NCM<br>Antecipação = Base × alíquota<br>Diferença a recolher = Antecipação − ICMS destacado na NF-e (se negativa, zero)<br><span class="faint">* IPI/frete conforme a aba Empresa. Itens sujeitos à ST (Anexo 1 do RICMS-BA) ou com ST retida ficam fora — vão para a antecipação total.</span></div>
+          <div class="formula only-ba" style="margin-top:10px" hidden>Base = valor do item + IPI* − desconto<br>Alíquota = alíquota interna da BA (20,5%) ou carga reduzida do Conv. ICMS 52/91 (Anexo II: 5,6% · Anexo I: 8,8%), conforme o NCM<br>Antecipação = Base × alíquota<br>Diferença a recolher = Antecipação − ICMS destacado na NF-e (se negativa, zero)<br><span class="faint">* IPI/frete conforme a aba Empresa.</span><br><br><b>Antecipação total (ST, receita 1145)</b> — itens do Anexo 1 do RICMS-BA / tabela da empresa:<br>BC ST = (valor do item + IPI + frete + seguro + outras − desconto) × (1 + MVA ajustada)<br>MVA ajustada = [(1 + MVA original) × (1 − alíq. interestadual) ÷ (1 − 20,5%)] − 1 (sem ajuste quando a NF não destaca ICMS)<br>ICMS ST a recolher = BC ST × 20,5% − ICMS da NF − ST já retido pelo fornecedor (negativo = zero)</div>
           <div class="formula only-mt" style="margin-top:10px">
             Base operação = vProd + vFrete + vSeg + vOutro − vDesc + vIPI*<br>
             MVA ajustada = [(1 + MVA) × (1 − alíq. inter) ÷ (1 − alíq. interna)] − 1 &nbsp;(quando a regra pede ajuste e a operação é interestadual)<br>
@@ -280,14 +285,19 @@ details summary{cursor:pointer;color:var(--ink2)}
   <section data-view="guias" hidden>
     <div class="panel">
       <div class="panel-h">
-        <div><h2>Guias a emitir</h2><div class="muted" style="font-size:13px">Uma guia por nota e por receita — DAR da SEFAZ da própria UF nas entradas, GNRE nas operações para outra UF. Copie os campos no portal, emita e registre o número/código de barras aqui.</div></div>
+        <div><h2>Guias a emitir</h2><div class="muted only-mt" style="font-size:13px">Uma guia por nota e por receita — DAR da SEFAZ da própria UF nas entradas, GNRE nas operações para outra UF. Copie os campos no portal, emita e registre o número/código de barras aqui.</div></div>
         <div class="row">
           <a class="btn primary" id="lnkLocal" href="https://www.sefaz.mt.gov.br" target="_blank" rel="noopener">Portal SEFAZ ↗</a><a class="btn" href="https://www.gnre.pe.gov.br" target="_blank" rel="noopener">Portal GNRE ↗</a>
           <button id="btnJson">Exportar dados (JSON)</button>
         </div>
       </div>
       <div class="panel-b">
-        <ol class="steps">
+        <ol class="steps only-ba" hidden>
+          <li>Na apuração do mês, confira as pendências e valide as notas emitidas fora do mês.</li>
+          <li>Abra o <b>Portal SEFAZ-BA</b> → DAE e emita uma guia por receita: <b>2175</b> (antecipação parcial) e <b>1145</b> (antecipação tributária/ST), com os campos de cada cartão.</li>
+          <li>Cole o <b>nº de série / nosso número</b> do DAE e clique em <b>Registrar emissão</b>. Baixe a <b>Memória PDF</b> e a <b>Planilha</b> de cada guia para enviar ao cliente.</li>
+        </ol>
+        <ol class="steps only-mt">
           <li>Abra o <b>Portal SEFAZ-MT</b> e escolha a emissão de DAR-1/AUT, receita <b>2817</b> (ICMS ST entrada interestadual).</li>
           <li>Preencha CNPJ/IE da filial, período, vencimento, valor e a NF-e (campo 32) com os botões <i>copiar</i> de cada cartão.</li>
           <li>Depois de gerar o DAR, cole o <b>número do campo 23</b> (ou a linha digitável) e clique em <b>Registrar emissão</b>. Baixe a <b>Memória PDF</b> para enviar ao cliente.</li>
@@ -295,6 +305,19 @@ details summary{cursor:pointer;color:var(--ink2)}
       </div>
     </div>
     <div class="guides" id="guides"></div>
+  </section>
+
+  <!-- RELATORIOS -->
+  <section data-view="relatorios" hidden style="display:grid;gap:18px">
+    <div class="panel">
+      <div class="panel-h"><div><h2>Relatório da apuração <span id="relPer"></span></h2><div class="muted" style="font-size:13px">Notas lançadas no mês da apuração (inclusive as emitidas em outro mês e validadas), totais, DAE e quebras por fornecedor e NCM.</div></div>
+        <div class="row"><button class="primary" id="btnRelPdf">Relatório PDF</button><button id="btnRelXlsx">Relatório Excel</button><button id="btnRelZip">XMLs do mês (.zip)</button></div></div>
+      <div class="panel-b" style="display:grid;gap:16px"><div class="summary" id="relSum"></div><div id="relBody"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><div><h2>Resumo anual</h2><div class="muted" style="font-size:13px">Clique em um mês para abrir a apuração.</div></div><select id="relAno" aria-label="Ano"></select></div>
+      <div class="tbl-wrap"><table id="relAnoTbl"></table></div>
+    </div>
   </section>
 
   <!-- REGRAS -->
@@ -571,7 +594,8 @@ function calcItem(n,it){
   return out;
 }
 const isCalc=r=>r.status==="ok"||r.status==="legal"||r.status==="complemento"||r.status==="parcial";
-function calcAll(){return notesAtivas().map(n=>({n,rows:n.items.map(it=>isBA()?calcParcialBA(n,it):calcItem(n,it))}))}
+function calcAllRaw(){return notesAtivas().map(n=>({n,rows:n.items.map(it=>isBA()?calcParcialBA(n,it):calcItem(n,it))}))}
+function calcAll(){const c=calcAllRaw(),a=apurAtiva();return a?c.filter(x=>periodoBA(x.n)===a):c}
 function nextDue(){
   if(cfg.vencRegra==="dia"){const d=new Date();const day=parseInt(cfg.diaVenc)||9;const x=new Date(d.getFullYear(),d.getMonth()+1,day);x.setMinutes(x.getMinutes()-x.getTimezoneOffset());return x.toISOString().slice(0,10)}
   return todayISO();
@@ -596,21 +620,23 @@ function buildGuides(calc){
 
 /* ---------- render ---------- */
 let tab="notas";
-function setTab(t){tab=t;$$("#tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===t));$$("[data-view]").forEach(s=>s.hidden=s.dataset.view!==t);try{localStorage.setItem("st_tab",t)}catch(e){}}
+function setTab(t){if(t==="relatorios"&&!isBA())t="notas";tab=t;const ab=$("#apurBar");if(ab)ab.hidden=!(isBA()&&["notas","calculo","guias","relatorios"].includes(t));$$("#tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===t));$$("[data-view]").forEach(s=>s.hidden=s.dataset.view!==t);try{localStorage.setItem("st_tab",t)}catch(e){} if(t==="relatorios"&&typeof renderRel==="function")renderRel();}
 $("#tabs").addEventListener("click",e=>{const b=e.target.closest("button[data-tab]");if(b)setTab(b.dataset.tab)});
 
 function renderAll(){
   const calc=calcAll(), guides=buildGuides(calc);
   $("#lnkLocal").href=cfg.portalLocal||"#"; $("#lnkLocal").textContent="Portal SEFAZ-"+(cfg.uf||"UF")+" ↗";
-  renderEmpSel(); $$(".only-ba").forEach(x=>x.hidden=!isBA()); $$(".only-mt").forEach(x=>x.hidden=isBA()); $("#lblRegras").textContent=isBA()?"Regras BA":"Regras MVA"; $("#lblOnly").textContent=isBA()?"só itens da antecipação parcial":"só itens com ST";
-  $("#cNotas").textContent=notesAtivas().length;
+  $("#subTit").textContent=isBA()?"XML da NF-e → antecipação parcial com base legal → DAE SEFAZ-BA, relatórios e memória em PDF":"XML da NF-e → cálculo com base legal → DAR SEFAZ-MT e memória em PDF";
+  renderEmpSel(); $$(".only-ba").forEach(x=>x.hidden=!isBA()); $$(".only-mt").forEach(x=>x.hidden=isBA()); $("#lblRegras").textContent=isBA()?"Regras BA":"Regras MVA"; $("#lblOnly").textContent=isBA()?"só itens com antecipação (parcial ou ST)":"só itens com ST";
+  if(!isBA()&&tab==="relatorios") setTab("notas"); else setTab(tab);
+  $("#cNotas").textContent=isBA()?calc.length:notesAtivas().length;
   const allRows=calc.flatMap(c=>c.rows);
   $("#cItens").textContent=allRows.filter(r=>isCalc(r)).length;
   $("#cGuias").textContent=guides.filter(g=>!hist[g.id]).length;
   $("#cRegras").textContent=rulesAtivas().length;
   $("#cHist").textContent=Object.keys(hist).length;
-  $("#btnClear").hidden=!notesAtivas().length;
-  if(isBA()){renderPendBA(calc);renderNotes(calc);renderCalcBA(calc);renderGuidesBA(guides)}else{renderPend(calc); renderNotes(calc); renderCalc(calc); renderGuides(guides);} renderRules(); renderHist(); applyGate();
+  $("#btnClear").hidden=!calc.length; $("#btnClear").textContent=isBA()&&apurAtiva()?"Limpar notas da apuração":"Limpar notas";
+  if(isBA()){renderApurBar(calc,guides);renderPendBA(calc);renderNotes(calc);renderCalcBA(calc);renderGuidesBA(guides);renderRel()}else{renderPend(calc); renderNotes(calc); renderCalc(calc); renderGuides(guides);} renderRules(); renderHist(); applyGate();
 }
 document.addEventListener("click",e=>{const g=e.target.closest("[data-go]");if(g)setTab(g.dataset.go)});
 
@@ -640,9 +666,9 @@ $("#pendList")&&document.addEventListener("click",e=>{
 });
 function renderNotes(calc){
   const el=$("#notesList");
-  if(!calc.length){el.innerHTML=`<div class="empty" style="text-align:left;max-width:560px;margin:0 auto"><b>Como usar</b><ol class="steps" style="margin-top:6px"><li>Arraste os XMLs das NF-e de compra acima (de qualquer filial).</li><li>Confira os valores na aba <b>Cálculo</b> e resolva o que aparecer em <b>Pendências</b>.</li><li>Na aba <b>Guias</b>, copie os campos para o DAR no portal da SEFAZ-MT, emita e registre o número.</li><li>Baixe a <b>memória de cálculo em PDF</b> de cada nota para enviar ao cliente.</li></ol></div>`;return}
+  if(!calc.length){el.innerHTML=`<div class="empty" style="text-align:left;max-width:560px;margin:0 auto"><b>Como usar</b><ol class="steps" style="margin-top:6px"><li>${isBA()?"Escolha o mês da <b>apuração</b> no topo e arraste os XMLs das NF-e de entrada — notas emitidas em outro mês geram alerta para validar.":"Arraste os XMLs das NF-e de compra acima (de qualquer filial)."}</li><li>Confira os valores na aba <b>Cálculo</b> e resolva o que aparecer em <b>Pendências</b>.</li><li>Na aba <b>Guias</b>, copie os campos para o ${isBA()?"DAE":"DAR"} no portal da SEFAZ-${esc(cfg.uf||"")}, emita e registre o número.</li>${isBA()?"<li>Na aba <b>Relatórios</b>, baixe o relatório do mês (PDF/Excel) e os XMLs.</li>":""}<li>Baixe a <b>memória de cálculo em PDF</b> de cada nota para enviar ao cliente.</li></ol></div>`;return}
   el.innerHTML=calc.map(({n,rows})=>{
-    const s=sentido(n), st=r2(rows.reduce((a,r)=>a+(r.icmsRaw||0)+(r.fcpRaw||0),0));
+    const s=sentido(n), st=r2(rows.reduce((a,r)=>a+(r.icmsRaw||0)+(r.fcpRaw||0),0)), stba=isBA()?r2(rows.reduce((a,r)=>a+stRaw(r),0)):0;
     const sem=rows.filter(r=>r.status==="semregra").length, ret=rows.filter(r=>r.status==="retida").length;
     const sp=s==="entrada"?`<span class="pill acc">Entrada · antecipação</span>`:s==="saida"?`<span class="pill acc">Saída · substituto</span>`:`<span class="pill neu">Sentido indefinido</span>`;
     return `<div class="note-card">
@@ -650,9 +676,9 @@ function renderNotes(calc){
         ${/EXEMPLO/i.test(n.emit.nome)?'<span class="pill warn">exemplo</span>':''}
         ${sem?`<span class="pill warn">${sem} sem regra</span>`:''}${ret?`<span class="pill neu">${ret} com ST retida</span>`:''}</div>
         <div class="muted">${esc(n.emit.nome)} <span class="mono">${esc(n.emit.uf)}</span> → ${esc(n.dest.nome)} <span class="mono">${esc(n.dest.uf)}</span> · ${brDate(n.dhEmi)} · ${n.items.length} itens · NF R$ ${fmt(n.vNF)}</div>
-        <div class="chave">${esc(n.chave)}</div>${isBA()?`<label class="faint" style="font-size:12px">Mês de referência da antecipação <input type="month" data-refper="${esc(n.id)}" value="${esc(periodoBA(n))}" style="padding:2px 4px;font-size:12px"></label>`:""}</div>
-      <div style="text-align:right"><div class="label">${isBA()?"Antecipação parcial":"ST + FCP"}</div><div class="mono" style="font-size:17px">R$ ${fmt(st)}</div>
-        <div class="row" style="justify-content:flex-end;gap:4px;margin-top:4px">${st>0?`<button data-pdf="${esc(n.id)}">Memória de cálculo (PDF)</button>`:""}<button class="ghost danger" data-rm="${esc(n.id)}">remover</button></div></div>
+        <div class="chave">${esc(n.chave)}</div>${isBA()?baMesLine(n):""}</div>
+      <div style="text-align:right">${isBA()?`<div class="label">Antecipação parcial</div><div class="mono" style="font-size:15px">R$ ${fmt(st)}</div><div class="label" style="margin-top:2px">Antecipação ST</div><div class="mono" style="font-size:15px">R$ ${fmt(stba)}</div>`:`<div class="label">ST + FCP</div><div class="mono" style="font-size:17px">R$ ${fmt(st)}</div>`}
+        <div class="row" style="justify-content:flex-end;gap:4px;margin-top:4px">${st>0||stba>0?`<button data-pdf="${esc(n.id)}">Memória de cálculo (PDF)</button>`:""}<button class="ghost danger" data-rm="${esc(n.id)}">remover</button></div></div>
     </div>`}).join("");
 }
 $("#notesList").addEventListener("click",e=>{const pdf=e.target.closest("[data-pdf]");if(pdf){memoriaPDF(pdf.dataset.pdf);return}
@@ -881,7 +907,7 @@ function applyGate(){
 }
 /* rules */
 const RCOLS=[["uf","UF dest.",60],["ncm","NCM (prefixo)",110],["cest","CEST",100],["descricao","Descrição",200],["mva","MVA %",70],["aliqInterna","Alíq. int. %",80],["fcp","FCP %",60],["reducao","Red. BC %",70],["ajustar","Ajusta MVA",70],["semST","Sem ST",60],["fonte","Base legal",160],["validada","Validada",70]];
-const RCOLS_BA=[["uf","UF",50],["ncm","NCM (prefixo)",100],["cProd","Cód. produto",100],["cnpjEmit","Raiz CNPJ fornecedor",110],["ncmProprio","NCM próprio",100],["descricao","Descrição",200],["tipoBA","Tratamento (parcial / st)",120],["carga","Alíquota %",80],["fonte","Fundamento",220],["validada","Validada",70]];
+const RCOLS_BA=[["uf","UF",50],["ncm","NCM (prefixo)",100],["cProd","Cód. produto",100],["cnpjEmit","Raiz CNPJ fornecedor",110],["ncmProprio","NCM próprio",100],["descricao","Descrição",200],["tipoBA","Tratamento (parcial / st)",120],["carga","Alíquota % (parcial)",80],["mva","MVA original % (ST)",80],["fonte","Fundamento",220],["validada","Validada",70]];
 function renderRules(){
   const t=$("#rulesTbl"), RC=isBA()?RCOLS_BA:RCOLS, rules=rulesAtivas();
   if(!rules.length){t.innerHTML=`<tr><td class="empty">Nenhuma regra. Clique em “Nova regra”.</td></tr>`;return}
@@ -1003,20 +1029,25 @@ $("#backupIn").addEventListener("change",async e=>{const f=e.target.files[0];e.t
 let notesMigrated=false;
 function sortNotes(){notes.sort((a,b)=>(b.dhEmi||"").localeCompare(a.dhEmi||""))}
 function saveNotes(){lsSet("st_notes",notes)}
+const XMLS={};
+async function pushXml(id,xml,emp){XMLS[id]=xml; if(!dbReady) return; try{await db.doc("xmls/"+safeId(id)).set({nota:id,empresa:emp||"",xml});}catch(e){console.warn("xml",e)}}
+async function getXml(id){ if(XMLS[id]) return XMLS[id]; if(!dbReady) return null; try{const d=await db.doc("xmls/"+safeId(id)).get(); return d.exists?d.data().xml:null}catch(e){return null} }
 async function pushNote(n){ if(!dbReady) return; try{ const {_shared,...clean}=n; await db.doc("notas/"+safeId(n.id)).set({nota:clean,importadaEm:new Date().toISOString()}); }catch(e){ toast("Nota salva só neste navegador: "+(e.code||e.message)); } }
-async function dropNote(id){ if(!dbReady) return; try{ await db.doc("notas/"+safeId(id)).delete(); }catch(e){} }
+async function dropNote(id){ delete XMLS[id]; if(!dbReady) return; try{ await db.doc("notas/"+safeId(id)).delete(); }catch(e){} try{ await db.doc("xmls/"+safeId(id)).delete(); }catch(e){} }
 async function importFiles(files){
   let ok=0,err=[];
-  const rpi=isBA()?($("#refPerImp").value||""):"";
-  for(const f of files){try{const n=parseNFe(await f.text(),f.name); if(rpi&&rpi!==(n.dhEmi||"").slice(0,7)) n.refPer=rpi;notes=notes.filter(x=>x.id!==n.id);notes.push(n);ok++;pushNote(n)}catch(e){err.push(f.name+": "+e.message)}}
-  sortNotes();saveNotes();const m=$("#importMsg");m.hidden=false;const fora=notes.filter(n=>!notaDaEmpresa(n)&&files.some(f=>n.fileName===f.name)).length;m.innerHTML=`${ok} nota(s) importada(s).`+(fora?` <span style="color:var(--warn)">${fora} não são da empresa selecionada (${esc(cfg.razao||'')}) — troque a empresa no topo para vê-las.</span>`:"")+(err.length?` <span style="color:var(--bad)">Falharam: ${esc(err.join("; "))}</span>`:"");renderAll();
+  const ap=isBA()?apurAtiva():""; const foraMes=[];
+  for(const f of files){try{const txt=await f.text(); const n=parseNFe(txt,f.name); const old=notes.find(x=>x.id===n.id);
+      if(isBA()){ const emi=(n.dhEmi||"").slice(0,7); n.refPer=ap||(old&&old.refPer)||emi; if(old&&old.validMes&&old.refPer===n.refPer) n.validMes=old.validMes; if(n.refPer!==emi&&!n.validMes&&notaDaEmpresa(n)) foraMes.push(n.nNF+" ("+apurLbl(emi)+")"); }
+      n.temXml=true; notes=notes.filter(x=>x.id!==n.id);notes.push(n);ok++;pushNote(n);pushXml(n.id,txt,rootOf(n.dest.cnpj))}catch(e){err.push(f.name+": "+e.message)}}
+  sortNotes();saveNotes();const m=$("#importMsg");m.hidden=false;const fora=notes.filter(n=>!notaDaEmpresa(n)&&files.some(f=>n.fileName===f.name)).length;m.innerHTML=`${ok} nota(s) importada(s)${ap?" na apuração "+apurLbl(ap):""}.`+(foraMes.length?` <span style="color:var(--warn)"><b>Atenção:</b> ${foraMes.length} nota(s) emitida(s) fora do mês da apuração — NF ${esc(foraMes.join(", "))}. Confira e clique em <b>Validar</b> (em Pendências ou no cartão da nota); até lá elas não entram na guia.</span>`:"")+(fora?` <span style="color:var(--warn)">${fora} não são da empresa selecionada (${esc(cfg.razao||'')}) — troque a empresa no topo para vê-las.</span>`:"")+(err.length?` <span style="color:var(--bad)">Falharam: ${esc(err.join("; "))}</span>`:"");renderAll();
 }
 $("#fileIn").addEventListener("change",e=>{importFiles([...e.target.files]);e.target.value=""});
 const drop=$("#drop");
 ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over")}));
 ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over")}));
 drop.addEventListener("drop",e=>importFiles([...e.dataTransfer.files].filter(f=>/xml$/i.test(f.name)||f.type.includes("xml"))));
-$("#btnClear").addEventListener("click",function(){if(this.dataset.confirm!=="1"){this.dataset.confirm="1";this.textContent="Confirmar limpeza?";setTimeout(()=>{this.dataset.confirm="";this.textContent="Limpar notas"},3000);return}const ids=new Set(notesAtivas().map(n=>n.id)); notes=notes.filter(n=>!ids.has(n.id)); saveNotes();renderAll()});
+$("#btnClear").addEventListener("click",function(){if(this.dataset.confirm!=="1"){this.dataset.confirm="1";this.textContent="Confirmar limpeza?";setTimeout(()=>{this.dataset.confirm="";this.textContent="Limpar notas"},3000);return}const ids=new Set(calcAll().map(c=>c.n.id)); notes=notes.filter(n=>!ids.has(n.id)); ids.forEach(id=>dropNote(id)); saveNotes();renderAll()});
 
 const EXAMPLE_XML=`<nfeProc versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe"><NFe xmlns="http://www.portalfiscal.inf.br/nfe"><infNFe Id="NFe43260990316407000204550010003127581967561551" versao="4.00"><ide><cUF>43</cUF><cNF>96756155</cNF><natOp>6.101-VENDA PRODUCAO ESTABELECIMENTO</natOp><mod>55</mod><serie>1</serie><nNF>312758</nNF><dhEmi>2026-09-11T08:10:00-03:00</dhEmi><dhSaiEnt>2026-09-11T08:10:00-03:00</dhSaiEnt><tpNF>1</tpNF><idDest>2</idDest><cMunFG>4310405</cMunFG><tpImp>1</tpImp><tpEmis>1</tpEmis><cDV>1</cDV><tpAmb>1</tpAmb><finNFe>1</finNFe><indFinal>0</indFinal><indPres>9</indPres><indIntermed>0</indIntermed><procEmi>0</procEmi><verProc>Rech 25.20j b1655</verProc></ide><emit><CNPJ>90316407000204</CNPJ><xNome>ROMAR F MANN &amp; CIA. LTDA.</xNome><xFant>ROMAR FILIAL</xFant><enderEmit><xLgr>R ANIZIO ARAUJO E SILVA</xLgr><nro>92</nro><xBairro>CENTRO</xBairro><cMun>4310405</cMun><xMun>INDEPENDENCIA</xMun><UF>RS</UF><CEP>98915000</CEP><cPais>1058</cPais><xPais>BRASIL</xPais><fone>5535394000</fone></enderEmit><IE>1980002417</IE><CRT>3</CRT></emit><dest><CNPJ>21174220000292</CNPJ><xNome>XINGU MAQUINAS AGRICOLAS LTDA</xNome><enderDest><xLgr>AV SUL</xLgr><nro>424</nro><xCpl>QUADRA: 13 LOT</xCpl><xBairro>SETOR H</xBairro><cMun>5107065</cMun><xMun>QUERENCIA</xMun><UF>MT</UF><CEP>78643000</CEP><cPais>1058</cPais><xPais>BRASIL</xPais><fone>6635291002</fone></enderDest><indIEDest>1</indIEDest><IE>135831695</IE><email>frederico.gasperi@xingumaquinas.com</email></dest><autXML><CPF>53360460006</CPF></autXML><det nItem="1"><prod><cProd>47818798</cProd><cEAN>7895823940250</cEAN><xProd>BARRA CENTRAL DA PLATAFORMA 47547951, 47818798 GTIN: 07895823940250 54001000592</xProd><NCM>84339090</NCM><CEST>0104501</CEST><cBenef>SEM CBENEF</cBenef><EXTIPI>01</EXTIPI><CFOP>6101</CFOP><uCom>PC</uCom><qCom>2.000</qCom><vUnCom>605.17</vUnCom><vProd>1210.34</vProd><cEANTrib>7895823940250</cEANTrib><uTrib>PC</uTrib><qTrib>2.000</qTrib><vUnTrib>605.17</vUnTrib><indTot>1</indTot><xPed>42110</xPed></prod><imposto><ICMS><ICMS20><orig>0</orig><CST>20</CST><modBC>3</modBC><pRedBC>41.4280</pRedBC><vBC>708.92</vBC><pICMS>7.0000</pICMS><vICMS>49.62</vICMS></ICMS20></ICMS><IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>1210.34</vBC><pIPI>2.6000</pIPI><vIPI>31.47</vIPI></IPITrib></IPI><PIS><PISAliq><CST>02</CST><vBC>1160.72</vBC><pPIS>2.3000</pPIS><vPIS>26.70</vPIS></PISAliq></PIS><COFINS><COFINSAliq><CST>02</CST><vBC>1160.72</vBC><pCOFINS>10.8000</pCOFINS><vCOFINS>125.36</vCOFINS></COFINSAliq></COFINS><IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib><gIBSCBS><vBC>1008.66</vBC><gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>1.01</vIBSUF></gIBSUF><gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>1.01</vIBS><gCBS><pCBS>0.9000</pCBS><vCBS>9.08</vCBS></gCBS></gIBSCBS></IBSCBS></imposto><infAdProd>O.C: 42110</infAdProd><vItem>1241.81</vItem></det><det nItem="2"><prod><cProd>47550259</cProd><cEAN>7895823945675</cEAN><xProd>BLOCO BRACO CENTRAL DA PLATAFORMA 47550259 GTIN: 07895823945675 5401126660</xProd><NCM>84339090</NCM><CEST>0104501</CEST><cBenef>SEM CBENEF</cBenef><CFOP>6101</CFOP><uCom>PC</uCom><qCom>6.000</qCom><vUnCom>242.90</vUnCom><vProd>1457.40</vProd><cEANTrib>7895823945675</cEANTrib><uTrib>PC</uTrib><qTrib>6.000</qTrib><vUnTrib>242.90</vUnTrib><indTot>1</indTot><xPed>42110</xPed></prod><imposto><ICMS><ICMS20><orig>0</orig><CST>20</CST><modBC>3</modBC><pRedBC>41.4280</pRedBC><vBC>853.63</vBC><pICMS>7.0000</pICMS><vICMS>59.75</vICMS></ICMS20></ICMS><IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>1457.40</vBC><pIPI>2.6000</pIPI><vIPI>37.89</vIPI></IPITrib></IPI><PIS><PISAliq><CST>02</CST><vBC>1397.65</vBC><pPIS>1.6500</pPIS><vPIS>23.06</vPIS></PISAliq></PIS><COFINS><COFINSAliq><CST>02</CST><vBC>1397.65</vBC><pCOFINS>7.6000</pCOFINS><vCOFINS>106.22</vCOFINS></COFINSAliq></COFINS><IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib><gIBSCBS><vBC>1268.37</vBC><gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>1.27</vIBSUF></gIBSUF><gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>1.27</vIBS><gCBS><pCBS>0.9000</pCBS><vCBS>11.42</vCBS></gCBS></gIBSCBS></IBSCBS></imposto><infAdProd>O.C: 42110</infAdProd><vItem>1495.29</vItem></det><det nItem="3"><prod><cProd>48004997</cProd><cEAN>7895823939452</cEAN><xProd>PISO PLATAFORMA DRAPER - LD 48004997 GTIN: 07895823939452 50009002333</xProd><NCM>84339090</NCM><CEST>0104501</CEST><cBenef>SEM CBENEF</cBenef><EXTIPI>01</EXTIPI><CFOP>6101</CFOP><uCom>PC</uCom><qCom>1.000</qCom><vUnCom>104.10</vUnCom><vProd>104.10</vProd><cEANTrib>7895823939452</cEANTrib><uTrib>PC</uTrib><qTrib>1.000</qTrib><vUnTrib>104.10</vUnTrib><indTot>1</indTot><xPed>42110</xPed></prod><imposto><ICMS><ICMS20><orig>0</orig><CST>20</CST><modBC>3</modBC><pRedBC>41.4280</pRedBC><vBC>60.97</vBC><pICMS>7.0000</pICMS><vICMS>4.27</vICMS></ICMS20></ICMS><IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>104.10</vBC><pIPI>2.6000</pIPI><vIPI>2.71</vIPI></IPITrib></IPI><PIS><PISAliq><CST>02</CST><vBC>99.83</vBC><pPIS>2.3000</pPIS><vPIS>2.30</vPIS></PISAliq></PIS><COFINS><COFINSAliq><CST>02</CST><vBC>99.83</vBC><pCOFINS>10.8000</pCOFINS><vCOFINS>10.78</vCOFINS></COFINSAliq></COFINS><IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib><gIBSCBS><vBC>86.75</vBC><gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>0.09</vIBSUF></gIBSUF><gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>0.09</vIBS><gCBS><pCBS>0.9000</pCBS><vCBS>0.78</vCBS></gCBS></gIBSCBS></IBSCBS></imposto><infAdProd>O.C: 42110</infAdProd><vItem>106.81</vItem></det><det nItem="4"><prod><cProd>48004995</cProd><cEAN>7895823935027</cEAN><xProd>PISO PLATAFORMA DRAPER - LE 48004995 GTIN: 07895823935027 50009002214</xProd><NCM>84339090</NCM><CEST>0104501</CEST><cBenef>SEM CBENEF</cBenef><EXTIPI>01</EXTIPI><CFOP>6101</CFOP><uCom>PC</uCom><qCom>1.000</qCom><vUnCom>104.10</vUnCom><vProd>104.10</vProd><cEANTrib>7895823935027</cEANTrib><uTrib>PC</uTrib><qTrib>1.000</qTrib><vUnTrib>104.10</vUnTrib><indTot>1</indTot><xPed>42110</xPed></prod><imposto><ICMS><ICMS20><orig>0</orig><CST>20</CST><modBC>3</modBC><pRedBC>41.4280</pRedBC><vBC>60.97</vBC><pICMS>7.0000</pICMS><vICMS>4.27</vICMS></ICMS20></ICMS><IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>104.10</vBC><pIPI>2.6000</pIPI><vIPI>2.71</vIPI></IPITrib></IPI><PIS><PISAliq><CST>02</CST><vBC>99.83</vBC><pPIS>2.3000</pPIS><vPIS>2.30</vPIS></PISAliq></PIS><COFINS><COFINSAliq><CST>02</CST><vBC>99.83</vBC><pCOFINS>10.8000</pCOFINS><vCOFINS>10.78</vCOFINS></COFINSAliq></COFINS><IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib><gIBSCBS><vBC>86.75</vBC><gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>0.09</vIBSUF></gIBSUF><gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>0.09</vIBS><gCBS><pCBS>0.9000</pCBS><vCBS>0.78</vCBS></gCBS></gIBSCBS></IBSCBS></imposto><infAdProd>O.C: 42110</infAdProd><vItem>106.81</vItem></det><det nItem="5"><prod><cProd>48031697</cProd><cEAN>7895823941936</cEAN><xProd>BRACO ACIONAMENTO CONJUNTO DE FACAS 48031697; 47767739; GTIN: 07895823941936 54011001460</xProd><NCM>84339090</NCM><CEST>0104501</CEST><cBenef>SEM CBENEF</cBenef><EXTIPI>01</EXTIPI><CFOP>6101</CFOP><uCom>PC</uCom><qCom>1.000</qCom><vUnCom>1052.90</vUnCom><vProd>1052.90</vProd><cEANTrib>7895823941936</cEANTrib><uTrib>PC</uTrib><qTrib>1.000</qTrib><vUnTrib>1052.90</vUnTrib><indTot>1</indTot><xPed>42110</xPed></prod><imposto><ICMS><ICMS20><orig>0</orig><CST>20</CST><modBC>3</modBC><pRedBC>41.4280</pRedBC><vBC>616.70</vBC><pICMS>7.0000</pICMS><vICMS>43.17</vICMS></ICMS20></ICMS><IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>1052.90</vBC><pIPI>2.6000</pIPI><vIPI>27.38</vIPI></IPITrib></IPI><PIS><PISAliq><CST>02</CST><vBC>1009.73</vBC><pPIS>2.3000</pPIS><vPIS>23.22</vPIS></PISAliq></PIS><COFINS><COFINSAliq><CST>02</CST><vBC>1009.73</vBC><pCOFINS>10.8000</pCOFINS><vCOFINS>109.05</vCOFINS></COFINSAliq></COFINS><IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib><gIBSCBS><vBC>877.46</vBC><gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>0.88</vIBSUF></gIBSUF><gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>0.88</vIBS><gCBS><pCBS>0.9000</pCBS><vCBS>7.90</vCBS></gCBS></gIBSCBS></IBSCBS></imposto><infAdProd>O.C: 42110</infAdProd><vItem>1080.28</vItem></det><det nItem="6"><prod><cProd>47484097</cProd><cEAN>7895823944500</cEAN><xProd>CARCACA CAIXA DE NAVALHA 47484097 GTIN: 07895823944500 5400125325</xProd><NCM>84339090</NCM><CEST>0104501</CEST><cBenef>SEM CBENEF</cBenef><CFOP>6101</CFOP><uCom>PC</uCom><qCom>1.000</qCom><vUnCom>4214.19</vUnCom><vProd>4214.19</vProd><cEANTrib>7895823944500</cEANTrib><uTrib>PC</uTrib><qTrib>1.000</qTrib><vUnTrib>4214.19</vUnTrib><indTot>1</indTot><xPed>42110</xPed></prod><imposto><ICMS><ICMS20><orig>0</orig><CST>20</CST><modBC>3</modBC><pRedBC>41.4280</pRedBC><vBC>2468.34</vBC><pICMS>7.0000</pICMS><vICMS>172.78</vICMS></ICMS20></ICMS><IPI><cEnq>999</cEnq><IPITrib><CST>50</CST><vBC>4214.19</vBC><pIPI>2.6000</pIPI><vIPI>109.57</vIPI></IPITrib></IPI><PIS><PISAliq><CST>02</CST><vBC>4041.41</vBC><pPIS>2.3000</pPIS><vPIS>92.95</vPIS></PISAliq></PIS><COFINS><COFINSAliq><CST>02</CST><vBC>4041.41</vBC><pCOFINS>10.8000</pCOFINS><vCOFINS>436.47</vCOFINS></COFINSAliq></COFINS><IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib><gIBSCBS><vBC>3511.99</vBC><gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>3.51</vIBSUF></gIBSUF><gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>3.51</vIBS><gCBS><pCBS>0.9000</pCBS><vCBS>31.61</vCBS></gCBS></gIBSCBS></IBSCBS></imposto><infAdProd>O.C: 42110</infAdProd><vItem>4323.76</vItem></det><total><ICMSTot><vBC>4769.53</vBC><vICMS>333.86</vICMS><vICMSDeson>0.00</vICMSDeson><vFCP>0.00</vFCP><vBCST>0.00</vBCST><vST>0.00</vST><vFCPST>0.00</vFCPST><vFCPSTRet>0.00</vFCPSTRet><vProd>8143.03</vProd><vFrete>0.00</vFrete><vSeg>0.00</vSeg><vDesc>0.00</vDesc><vII>0.00</vII><vIPI>211.73</vIPI><vIPIDevol>0.00</vIPIDevol><vPIS>170.53</vPIS><vCOFINS>798.66</vCOFINS><vOutro>0.00</vOutro><vNF>8354.76</vNF></ICMSTot><IBSCBSTot><vBCIBSCBS>6839.98</vBCIBSCBS><gIBS><gIBSUF><vDif>0.00</vDif><vDevTrib>0.00</vDevTrib><vIBSUF>6.85</vIBSUF></gIBSUF><gIBSMun><vDif>0.00</vDif><vDevTrib>0.00</vDevTrib><vIBSMun>0.00</vIBSMun></gIBSMun><vIBS>6.85</vIBS><vCredPres>0.00</vCredPres><vCredPresCondSus>0.00</vCredPresCondSus></gIBS><gCBS><vDif>0.00</vDif><vDevTrib>0.00</vDevTrib><vCBS>61.57</vCBS><vCredPres>0.00</vCredPres><vCredPresCondSus>0.00</vCredPresCondSus></gCBS></IBSCBSTot><vNFTot>8354.76</vNFTot></total><transp><modFrete>1</modFrete><transporta><CNPJ>05423509000160</CNPJ><xNome>LOPES &amp; OLIVEIRA TRANSPORTES E T</xNome><IE>0250101602</IE><xEnder>R ALFREDO OSCAR KOCHEMBORGER,155/PREDIO</xEnder><xMun>CARAZINHO</xMun><UF>RS</UF></transporta><vol><qVol>3</qVol><esp>REF. 14</esp><marca>CX PAP ONDULADO 208</marca><pesoL>22.962</pesoL><pesoB>22.962</pesoB></vol></transp><cobr><fat><nFat>000312758</nFat><vOrig>8354.76</vOrig><vDesc>0.00</vDesc><vLiq>8354.76</vLiq></fat><dup><nDup>001</nDup><dVenc>2026-10-11</dVenc><vDup>2926.76</vDup></dup><dup><nDup>002</nDup><dVenc>2026-11-10</dVenc><vDup>2714.00</vDup></dup><dup><nDup>003</nDup><dVenc>2026-12-10</dVenc><vDup>2714.00</vDup></dup></cobr><pag><detPag><indPag>1</indPag><tPag>15</tPag><vPag>8354.76</vPag></detPag></pag><infAdic><infCpl>OC: 42110 Representante: RPM REPRES.DE PEC.DE MAQS.EIRELI  CBS 61.57 IBS 6.85</infCpl><obsCont xCampo="Emitido pelo"><xTexto>ERP SIGER</xTexto></obsCont><obsCont xCampo="Rech Informatica"><xTexto>51 3582.4001 - www.rech.com.br</xTexto></obsCont><obsCont xCampo="CODNOT"><xTexto>0243017</xTexto></obsCont><obsCont xCampo="FATPEN"><xTexto>000312758;3;000;1;</xTexto></obsCont><obsCont xCampo="Fones"><xTexto>Fone: (55)3539.4000</xTexto></obsCont><obsCont xCampo="GY-EEM"><xTexto>vendas@rfmann.com.br</xTexto></obsCont></infAdic><compra><xPed>42110</xPed></compra><infRespTec><CNPJ>93419380000184</CNPJ><xContato>Cleber Fabiano Sesterheim</xContato><email>controladoria@rech.com.br</email><fone>5135824001</fone></infRespTec></infNFe></NFe><protNFe versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe"><infProt><tpAmb>1</tpAmb><verAplic>RS2609090815DR</verAplic><chNFe>43260990316407000204550010003127581967561551</chNFe><dhRecbto>2026-09-11T08:10:18-03:00</dhRecbto><nProt>243260392517802</nProt><digVal>MmZBNW6gSI0VeP0Vbgn9mKTUXzU=</digVal><cStat>100</cStat><xMotivo>Autorizado o uso da NF-e</xMotivo></infProt></protNFe></nfeProc>`;
 function loadExample(){const n=parseNFe(EXAMPLE_XML,"exemplo.xml");notes=notes.filter(x=>x.id!==n.id);notes.push(n);saveNotes();renderAll()}
@@ -1098,9 +1129,9 @@ function calcParcialBA(n,it){
   const out={it,ufO,ufD,status:"",base:0,carga:0,antec:0,cred:0,icmsRaw:0,fcpRaw:0};
   if(rootOf(n.dest.cnpj)!==rootOf(cfg.cnpj)){out.status="naoentrada";return out}
   if(ufO===ufD){out.status="interna";return out}
-  if(it.vICMSST>0){out.status="retida";return out}
   const c=classifyBA(it,n); out.cls=c; out.legal={fund:c.fund,conferir:c.conferir};
-  if(c.tipo==="st"){out.status="st_ba";return out}
+  if(it.vICMSST>0){out.status="retida"; if(c.tipo==="st") calcSTBA(n,it,c,out); return out}
+  if(c.tipo==="st"){out.status="st_ba"; calcSTBA(n,it,c,out); return out}
   if(!/^6/.test(it.cfop||"")) out.cfopAlert=`CFOP ${it.cfop} não é de operação interestadual.`;
   else if(!/^6(10[1-9]|11[0-9]|12[0-9])$/.test(it.cfop||"")) out.cfopAlert=`CFOP ${it.cfop} não é de venda/revenda — confirmar se a mercadoria é para comercialização.`;
   const base=it.vProd-it.vDesc+(cfg.ipiNaBase?it.vIPI:0)+(cfg.freteNaBase?it.vFrete:0);
@@ -1108,18 +1139,50 @@ function calcParcialBA(n,it){
   Object.assign(out,{status:"parcial",base,carga:c.carga,antec,cred,difBruta:dif,negativo:dif<-0.005,icmsRaw:Math.max(0,dif),icmsST:r2(Math.max(0,dif))});
   return out;
 }
+/* antecipação total (ST) — receita 1145 */
+const BA_MVA_SEED=[["7318",55,"parafusos, porcas e arruelas"],["848140",45,"válvulas de segurança/alívio"]];
+function mvaBA(c){
+  if(c.rule&&num(c.rule.mva)>0) return {mva:num(c.rule.mva),ref:`MVA original ${pct(num(c.rule.mva))} definida na regra cadastrada${c.rule.fonte?" ("+c.rule.fonte.slice(0,120)+")":""}`,ok:true};
+  const ncm=c.ncmUso, sd=BA_MVA_SEED.filter(([p])=>ncm.startsWith(p)).sort((a,b)=>b[0].length-a[0].length)[0];
+  if(sd) return {mva:sd[1],ref:`MVA original ${pct(sd[1])} — ${sd[2]}, Anexo 1 do RICMS-BA (segmento materiais de construção), conforme memória de cálculo da empresa.`,ok:true};
+  const a=baAnexo1(ncm);
+  if(a&&a.seg==="1") return {mva:71.78,ref:`MVA original 71,78% — peças e acessórios para veículos automotores, Anexo 1 do RICMS-BA (Conv. ICMS 142/18, Anexo II), posição ${ncmFmt(a.p)}.`,ok:true};
+  const pad=num(cfg.mvaPadraoST)||71.78;
+  return {mva:pad,ref:`MVA original ${pct(pad)} (padrão da empresa) — NCM sem MVA cadastrada.`,ok:false};
+}
+function calcSTBA(n,it,c,out){
+  const m=mvaBA(c), aliq=num(cfg.aliqPadrao)||20.5, inter=num(it.pICMS);
+  const base=it.vProd+it.vIPI+it.vFrete+it.vSeg+it.vOutro-it.vDesc;
+  const aj=Math.round((inter>0?((1+m.mva/100)*(1-inter/100)/(1-aliq/100)-1):m.mva/100)*10000)/10000; // MVA ajustada com 4 casas, como na memória da empresa
+  const bc=base*(1+aj), st=bc*aliq/100, dif=st-(it.vICMS||0)-(it.vICMSST||0);
+  if(!m.ok) c.conferir.push(`MVA não cadastrada para o NCM ${ncmFmt(c.ncmUso)}: usada a MVA padrão de ${pct(m.mva)} — confirme no Anexo 1 do RICMS-BA e cadastre em Regras BA.`);
+  c.fund.push(m.ref,`Antecipação total (ST): BC ST = (valor do item + IPI + frete/seguro/outras − desconto) × (1 + MVA ajustada ${pct(aj*100)}${inter>0?`; ajuste pela alíquota interestadual de ${pct(inter)}`:"; sem ajuste (NF sem ICMS destacado)"}); ICMS ST = BC ST × ${pct(aliq)} − ICMS da NF − ST retido pelo fornecedor (negativo = zero).`);
+  Object.assign(out,{st:{base,mva:m.mva,mvaRef:m.ref,inter,aj,aliq,bc,icms:st,proprio:it.vICMS||0,retido:it.vICMSST||0,dif,raw:Math.max(0,dif)}});
+}
+const stRaw=r=>r.st?r.st.raw:0;
 function periodoBA(n){return n.refPer||(n.dhEmi||"").slice(0,7)}
+function isForaMes(n){return isBA()&&periodoBA(n)!==(n.dhEmi||"").slice(0,7)}
+function precisaValidar(n){return isForaMes(n)&&!n.validMes}
+let apur=lsGet("st_apur",""), apurTodas=!!lsGet("st_apur_all",false);
+function apurAtiva(){return isBA()&&!apurTodas?apur:""}
+function apurLbl(p){return p?p.slice(5,7)+"/"+p.slice(0,4):""}
+function shiftMes(p,d){const [y,m]=p.split("-").map(Number);const x=new Date(y,m-1+d,1);return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")}
 function vencBA(per){ if(!per) return ""; const [y,m]=per.split("-").map(Number); const d=new Date(y,m,parseInt(cfg.diaVenc)||25); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10) }
 function buildGuidesBA(calc){
   const byPer={};
-  for(const c of calc){ const rows=c.rows.filter(r=>r.status==="parcial"); if(!rows.length) continue; const per=periodoBA(c.n);
-    (byPer[per]=byPer[per]||{per,calc:[],raw:0}).calc.push(c); byPer[per].raw+=rows.reduce((a,r)=>a+r.icmsRaw,0) }
-  return Object.values(byPer).sort((a,b)=>b.per.localeCompare(a.per)).map(p=>{ const valor=r2(p.raw); const notas=p.calc.filter(c=>c.rows.some(r=>r.status==="parcial"&&r.icmsRaw>0)).map(c=>c.n);
-    return {id:`BA-${rootOf(cfg.cnpj)}-${p.per}`,per:p.per,periodo:p.per.slice(5,7)+"/"+p.per.slice(0,4),venc:vencBA(p.per),receita:cfg.receitaLocal||"2175",tipo:"ICMS antecipação parcial",guia:"DAE · SEFAZ-BA",uf:"BA",local:true,valor,notas,calc:p.calc,n:notas[0]||p.calc[0].n,chave:"",nNF:notas.map(n=>n.nNF).join(", ")} }).filter(g=>g.valor>0);
+  for(const c of calc){ if(precisaValidar(c.n)) continue; const per=periodoBA(c.n); const P=(byPer[per]=byPer[per]||{per,calc:[],par:0,st:0}); P.calc.push(c);
+    P.par+=c.rows.filter(r=>r.status==="parcial").reduce((a,r)=>a+r.icmsRaw,0); P.st+=c.rows.reduce((a,r)=>a+stRaw(r),0) }
+  const out=[];
+  Object.values(byPer).sort((a,b)=>b.per.localeCompare(a.per)).forEach(p=>{ const base={per:p.per,periodo:p.per.slice(5,7)+"/"+p.per.slice(0,4),venc:vencBA(p.per),guia:"DAE · SEFAZ-BA",uf:"BA",local:true,calc:p.calc,chave:""};
+    const nPar=p.calc.filter(c=>c.rows.some(r=>r.status==="parcial"&&r.icmsRaw>0)).map(c=>c.n);
+    const nST=p.calc.filter(c=>c.rows.some(r=>r.st)).map(c=>c.n);
+    if(r2(p.par)>0) out.push({...base,kind:"parcial",id:`BA-${rootOf(cfg.cnpj)}-${p.per}`,receita:cfg.receitaLocal||"2175",tipo:"ICMS antecipação parcial",espec:"ICMS ANTECIPAÇÃO PARCIAL",valor:r2(p.par),notas:nPar,n:nPar[0],nNF:nPar.map(n=>n.nNF).join(", ")});
+    if(r2(p.st)>0) out.push({...base,kind:"st",id:`BAST-${rootOf(cfg.cnpj)}-${p.per}`,receita:cfg.receitaSTBA||"1145",tipo:"ICMS antecipação tributária (ST)",espec:"ICMS ANTECIPAÇÃO TRIBUTÁRIA",valor:r2(p.st),notas:nST,n:nST[0],nNF:nST.map(n=>n.nNF).join(", ")}) });
+  return out;
 }
 function baCountsBadge(rows){const s=k=>rows.filter(r=>r.status===k).length;return {par:s("parcial"),st:s("st_ba"),ret:s("retida")}}
 function renderCalcBA(calc){
-  const only=$("#onlyST").checked, all=calc.flatMap(c=>c.rows), par=all.filter(r=>r.status==="parcial");
+  const only=$("#onlyST").checked, all=calc.flatMap(c=>c.rows), par=all.filter(r=>r.status==="parcial"), sts=all.filter(r=>r.st);
   const tot=k=>par.reduce((a,r)=>a+(r[k]||0),0);
   $("#sumBox").innerHTML=`
     <div><div class="label">Notas</div><div class="v">${calc.length}</div></div>
@@ -1128,12 +1191,13 @@ function renderCalcBA(calc){
     <div><div class="label">Antecipação (base × alíq.)</div><div class="v">${fmt(tot("antec"))}</div></div>
     <div><div class="label">(−) ICMS destacado</div><div class="v">${fmt(tot("cred"))}</div></div>
     <div><div class="label">Diferença a recolher</div><div class="v accent">${fmt(r2(tot("icmsRaw")))}</div></div>
-    <div><div class="label">Itens ST (antecipação total)</div><div class="v">${all.filter(r=>r.status==="st_ba").length}</div></div>`;
+    <div><div class="label">Itens ST (antecip. total)</div><div class="v">${sts.length}</div></div>
+    <div><div class="label">ST a recolher (1145)</div><div class="v accent">${fmt(r2(sts.reduce((a,r)=>a+r.st.raw,0)))}</div></div>`;
   if(!calc.length){$("#calcTbl").innerHTML=`<tr><td class="empty">Importe as notas de entrada da ${esc(cfg.razao||"empresa")} para ver o cálculo.</td></tr>`;return}
   const PILL={parcial:'<span class="pill acc">antecipação parcial</span>',st_ba:'<span class="pill neu">ST — antecipação total</span>',retida:'<span class="pill neu">ST retida pelo fornecedor</span>',interna:'<span class="pill neu">operação interna</span>',naoentrada:'<span class="pill neu">não é entrada</span>'};
-  let h=`<thead><tr><th>Item</th><th>NCM / CEST</th><th>Situação</th><th class="num">Valor item</th><th class="num">IPI</th><th class="num">Desconto</th><th class="num">Base</th><th class="num">Alíquota</th><th class="num">Antecipação</th><th class="num">(−) ICMS destacado</th><th class="num">Diferença</th></tr></thead><tbody>`;
+  let h=`<thead><tr><th>Item</th><th>NCM / CEST</th><th>Situação</th><th class="num">Valor item</th><th class="num">IPI</th><th class="num">Desconto</th><th class="num">Base / BC ST</th><th class="num">Alíquota / MVA</th><th class="num">Antecipação / ICMS ST</th><th class="num">(−) ICMS NF / ST retido</th><th class="num">A recolher</th></tr></thead><tbody>`;
   for(const {n,rows} of calc){
-    const vis=only?rows.filter(r=>r.status==="parcial"):rows; if(!vis.length) continue;
+    const vis=only?rows.filter(r=>r.status==="parcial"||(r.st&&r.st.raw>0.005)):rows; if(!vis.length) continue;
     h+=`<tr class="sub"><td colspan="11">NF-e ${esc(n.nNF)} · ${esc(n.emit.uf)} → ${esc(n.dest.uf)} · ${esc(n.emit.nome)} · ${brDate(n.dhEmi)}</td></tr>`;
     for(const r of vis){ const it=r.it, d=r.status==="parcial", c=r.cls;
       const conf=r.legal&&r.legal.conferir.length;
@@ -1141,7 +1205,8 @@ function renderCalcBA(calc){
       h+=`<tr><td class="desc"><span class="mono faint">${esc(it.nItem)}</span> ${esc(it.xProd)}<div class="faint" style="font-size:12px">cód. ${esc(it.cProd)} · CFOP ${esc(it.cfop)} · CST ${esc(it.orig)}${esc(it.cst)}${r.cls&&r.cls.rule&&r.cls.rule.cProd?' · <b>decisão por produto</b>':''}</div>${r.legal?`<details style="margin-top:4px"><summary style="font-size:12px">fundamentação</summary><ul class="steps" style="font-size:12px">${r.legal.fund.map(f=>`<li>${esc(f)}</li>`).join("")}${r.legal.conferir.map(f=>`<li style="color:var(--warn)">${esc(f)}</li>`).join("")}${r.negativo?`<li style="color:var(--warn)">ICMS destacado maior que a antecipação: diferença negativa (${fmt(r.difBruta)}) considerada zero.</li>`:""}</ul></details>`:''}${acts}</td>
       <td class="mono">${esc(it.ncm)}<div class="faint">${esc(it.cest)||"—"}</div></td><td>${PILL[r.status]||esc(r.status)}${conf?' <span class="pill warn">conferir</span>':''}</td>
       <td class="num">${fmt(it.vProd)}</td><td class="num">${it.vIPI?fmt(it.vIPI):"—"}</td><td class="num">${it.vDesc?fmt(it.vDesc):"—"}</td>
-      <td class="num">${d?fmt(r.base):"—"}</td><td class="num">${d?pct(r.carga):"—"}</td><td class="num">${d?fmt(r.antec):"—"}</td><td class="num">${fmt(it.vICMS)}</td><td class="num"><b>${d?fmt(r.icmsST):(r.status==="retida"?"ST "+fmt(it.vICMSST):"—")}</b></td></tr>`; }
+      ${r.st?`<td class="num">${fmt(r.st.bc)}<div class="faint" style="font-size:11px">BC ST</div></td><td class="num">MVA ${pct(r.st.aj*100)}<div class="faint" style="font-size:11px">orig. ${pct(r.st.mva)} · ${pct(r.st.aliq)}</div></td><td class="num">${fmt(r.st.icms)}</td><td class="num">${fmt(r.st.proprio+r.st.retido)}${r.st.retido?`<div class="faint" style="font-size:11px">ST retido ${fmt(r.st.retido)}</div>`:""}</td><td class="num"><b>${fmt(r2(r.st.raw))}</b>${r.status==="retida"&&r.st.raw>0.005?'<div class="faint" style="font-size:11px">complemento</div>':""}</td>`
+        :`<td class="num">${d?fmt(r.base):"—"}</td><td class="num">${d?pct(r.carga):"—"}</td><td class="num">${d?fmt(r.antec):"—"}</td><td class="num">${fmt(it.vICMS)}</td><td class="num"><b>${d?fmt(r.icmsST):(r.status==="retida"?"ST "+fmt(it.vICMSST):"—")}</b></td>`}</tr>`; }
   }
   $("#calcTbl").innerHTML=h+"</tbody>";
 }
@@ -1153,7 +1218,7 @@ async function baProdRule(tipo,nid,ni){
     fonte:`Produto ${it.cProd} de ${n.emit.nome} tratado como ${tipo==="st"?"sujeito à ST (antecipação total)":"tributado (antecipação parcial)"} — decisão registrada em ${new Date().toLocaleDateString("pt-BR")}${window.__siteUser?" por "+window.__siteUser.email:""}.`};
   rules.push(r); saveRule(r); renderAll(); toast("Decisão gravada para o produto "+it.cProd);
 }
-document.addEventListener("change",e=>{const i=e.target.closest("[data-refper]");if(!i)return;const n=notes.find(x=>x.id===i.dataset.refper);if(!n||!/^\d{4}-\d{2}$/.test(i.value))return;if(i.value===(n.dhEmi||"").slice(0,7))delete n.refPer;else n.refPer=i.value;saveNotes();pushNote(n);renderAll();toast("Mês de referência da NF "+n.nNF+": "+i.value.split("-").reverse().join("/"))});
+document.addEventListener("change",e=>{const i=e.target.closest("[data-refper]");if(!i)return;const n=notes.find(x=>x.id===i.dataset.refper);if(!n||!/^\d{4}-\d{2}$/.test(i.value))return;n.refPer=i.value;delete n.validMes;saveNotes();pushNote(n);renderAll();toast("NF "+n.nNF+" movida para a apuração "+apurLbl(i.value)+(isForaMes(n)?" — precisa ser validada":""))});
 document.addEventListener("click",e=>{const b=e.target.closest("#calcTbl [data-baprod]");if(!b)return;const [t,nid,ni]=b.dataset.baprod.split("|");baProdRule(t,nid,ni)});
 let PEND_BA=[];
 function renderPendBA(calc){
@@ -1169,6 +1234,9 @@ function renderPendBA(calc){
   const cfA={}; calc.forEach(({n,rows})=>rows.filter(r=>r.cfopAlert).forEach(r=>{(cfA[n.nNF]=cfA[n.nNF]||{r,c:new Set()}).c.add(r.it.cfop)}));
   Object.entries(cfA).forEach(([nf,{r,c}])=>P.push({lvl:"warn",t:`NF ${esc(nf)}: CFOP ${[...c].join(", ")}`,d:esc(r.cfopAlert),a:""}));
   rulesAtivas().filter(r=>!r.validada).forEach(r=>P.push({lvl:"warn",t:`Validar regra BA · NCM <span class="mono">${esc(r.ncm)}</span>${r.cProd?` · produto ${esc(r.cProd)}`:""}`,d:esc(r.fonte||"—"),a:canEditRules?`<button data-validate="${esc(r.id)}">Marcar como validada</button>`:""}));
+  const pv=calc.filter(c=>precisaValidar(c.n)).map(c=>c.n);
+  if(pv.length) P.push({lvl:"bad",t:`${pv.length} nota(s) emitida(s) fora do mês da apuração ${esc(apurLbl(apurAtiva()||periodoBA(pv[0])))}`,d:pv.map(n=>`NF ${esc(n.nNF)} — emitida em ${brDate(n.dhEmi)}, lançada em ${esc(apurLbl(periodoBA(n)))} (${esc((n.emit.nome||"").slice(0,30))})`).join("<br>")+"<br>Confirme que a mercadoria deu entrada neste mês. Até validar, a nota não entra na guia nem no relatório.",
+    a:`<div class="row"><button class="primary" data-valmes="${esc(pv.map(n=>n.id).join("|"))}">Validar ${pv.length>1?"todas":"nota"}</button></div>`});
   const outros=notes.filter(n=>!notaDaEmpresa(n)).length;
   if(outros) P.push({lvl:"warn",t:`${outros} nota(s) importada(s) são de outra empresa`,d:"Elas aparecem quando você seleciona a empresa correspondente no topo da página.",a:""});
   $("#pendPanel").hidden=!P.length; $("#pendCount").textContent=P.length+" item(ns)";
@@ -1184,14 +1252,16 @@ document.addEventListener("click",e=>{
 });
 function guideFieldsBA(g){
   const nfs=g.notas.map(n=>n.nNF);
-  return [["Código da receita",g.receita],["Referência",g.periodo],["Data de vencimento",brDate(g.venc)],["Inscrição estadual",cfg.ie],["CNPJ",fmtCnpj(cfg.cnpj)],["Razão social",cfg.razao],
+  return [["Código da receita",g.receita],["Especificação",g.espec||g.tipo],["Referência",g.periodo],["Data de vencimento",brDate(g.venc)],["Inscrição estadual",cfg.ie],["CNPJ",fmtCnpj(cfg.cnpj)],["Razão social",cfg.razao],
     ["Endereço",cfg.endereco],["Bairro",cfg.bairro],["CEP",cfg.cep],["Município",cfg.municipio],["Código do município",cfg.codMunSefaz],["Valor principal",fmt(g.valor)],
-    ["Notas fiscais",`${nfs.length}: ${nfs.join(", ")}`],["Informações complementares",`ANTECIPAÇÃO PARCIAL REF ${g.periodo.replace("/","-")} · Notas Fiscais: ${nfs.length}`]];
+    ["Notas fiscais",`${nfs.length}: ${nfs.join(", ")}`],["Informações complementares",g.kind==="st"?`ANTECIPAÇÃO DO ICMS ST REF ${g.periodo.replace("/","-")} · Notas Fiscais: ${nfs.length}`:`ANTECIPAÇÃO PARCIAL REF ${g.periodo.replace("/","-")} · Notas Fiscais: ${nfs.length}`]];
 }
 function renderGuidesBA(guides){
   const el=$("#guides");
-  if(!guides.length){el.innerHTML=`<div class="panel empty" style="grid-column:1/-1">Nenhuma antecipação parcial a recolher. ${notesAtivas().length?'Confira a aba Cálculo.':'Importe as notas do mês primeiro.'}</div>`;return}
-  el.innerHTML=guides.map(g=>{ const h=hist[g.id]; const fields=guideFieldsBA(g);
+  const pv=calcAll().filter(c=>precisaValidar(c.n)).length;
+  const aviso=pv?`<div class="callout" style="grid-column:1/-1">${pv} nota(s) fora do mês aguardando validação não entraram no valor da guia. Valide em <button class="ghost" data-go="notas" style="padding:0">Notas → Pendências</button>.</div>`:"";
+  if(!guides.length){el.innerHTML=aviso+`<div class="panel empty" style="grid-column:1/-1">Nenhuma antecipação parcial a recolher${apurAtiva()?" na apuração "+apurLbl(apurAtiva()):""}. ${calcAll().length?'Confira a aba Cálculo.':'Importe as notas do mês primeiro.'}</div>`;return}
+  el.innerHTML=aviso+guides.map(g=>{ const h=hist[g.id]; const fields=guideFieldsBA(g);
     const copyVal=(k,v)=>/Valor/.test(k)?v:(/CNPJ|CEP|Inscrição/i.test(k)?onlyDigits(v):v);
     return `<article class="guide">
       <div class="guide-h"><div><div class="label">${esc(g.guia)} · ${esc(g.tipo)} · ${esc(g.periodo)}</div><div class="amt">R$ ${fmt(g.valor)}</div></div>
@@ -1199,23 +1269,23 @@ function renderGuidesBA(guides){
       <div class="gf">${fields.map(([k,v])=>`<span class="k">${esc(k)}</span><span class="v">${esc(v)||'<span class="faint">—</span>'}</span><button data-copy="${esc(copyVal(k,v))}" aria-label="Copiar ${esc(k)}">copiar</button>`).join("")}</div>
       <div class="guide-f">
         ${h?`<div class="muted" style="font-size:12px">Emitido em ${brDate(h.emitidaEm)}${h.controle?` · nosso número <span class="mono">${esc(h.controle)}</span>`:''}</div>
-             <div class="row"><button data-bapdf="${esc(g.per)}">Memória PDF</button><button data-baxlsx="${esc(g.per)}">Planilha (.xlsx)</button><button data-pay="${esc(g.id)}" ${h.status==="paga"?"disabled":""}>Marcar como paga</button><button class="ghost danger" data-undo="${esc(g.id)}">Desfazer registro</button></div>`
+             <div class="row"><button data-bapdf="${esc(g.per)}|${g.kind}">Memória PDF</button><button data-baxlsx="${esc(g.per)}|${g.kind}">Planilha (.xlsx)</button><button data-pay="${esc(g.id)}" ${h.status==="paga"?"disabled":""}>Marcar como paga</button><button class="ghost danger" data-undo="${esc(g.id)}">Desfazer registro</button></div>`
           :`<div class="field"><label class="label" for="ctl-${esc(g.id)}">Nº de série / nosso número do DAE (gerado pela SEFAZ-BA)</label><input id="ctl-${esc(g.id)}" class="mono" placeholder="cole aqui após gerar o DAE"></div>
-             <div class="row"><a class="btn" href="${esc(cfg.portalLocal||"https://www.sefaz.ba.gov.br/")}" target="_blank" rel="noopener">Portal SEFAZ-BA ↗</a><button data-bapdf="${esc(g.per)}">Memória PDF</button><button data-baxlsx="${esc(g.per)}">Planilha (.xlsx)</button><button class="primary" data-baemit="${esc(g.id)}">Registrar emissão</button></div>`}
+             <div class="row"><a class="btn" href="${esc(cfg.portalLocal||"https://www.sefaz.ba.gov.br/")}" target="_blank" rel="noopener">Portal SEFAZ-BA ↗</a><button data-bapdf="${esc(g.per)}|${g.kind}">Memória PDF</button><button data-baxlsx="${esc(g.per)}|${g.kind}">Planilha (.xlsx)</button><button class="primary" data-baemit="${esc(g.id)}">Registrar emissão</button></div>`}
       </div></article>`}).join("");
   el._guides=guides;
 }
 document.addEventListener("click",async e=>{
-  const p=e.target.closest("[data-bapdf]"); if(p){memoriaBA(p.dataset.bapdf);return}
-  const x=e.target.closest("[data-baxlsx]"); if(x){xlsxBA(x.dataset.baxlsx);return}
+  const p=e.target.closest("[data-bapdf]"); if(p){const [per,k]=p.dataset.bapdf.split("|"); k==="st"?memoriaSTBA(per):memoriaBA(per);return}
+  const x=e.target.closest("[data-baxlsx]"); if(x){const [per,k]=x.dataset.baxlsx.split("|"); k==="st"?xlsxSTBA(per):xlsxBA(per);return}
   const em=e.target.closest("[data-baemit]"); if(em){ const gs=$("#guides")._guides||[]; const g=gs.find(y=>y.id===em.dataset.baemit); if(!g) return;
     const ctl=document.getElementById("ctl-"+g.id).value.trim();
-    await saveHist(g.id,{chave:"",nNF:g.nNF,uf:"BA",receita:g.receita,tipo:g.tipo,valor:g.valor,vencimento:g.venc,periodo:g.periodo,controle:ctl,status:"emitida",emitidaEm:todayISO(),emitente:(cfg.razao||"")+" · "+g.notas.length+" NF",destinatario:cfg.razao,empresa:rootOf(cfg.cnpj)}); toast("Emissão registrada") }
+    await saveHist(g.id,{chave:"",nNF:g.nNF,uf:"BA",receita:g.receita,tipo:g.tipo,kind:g.kind,valor:g.valor,vencimento:g.venc,periodo:g.periodo,controle:ctl,status:"emitida",emitidaEm:todayISO(),emitente:(cfg.razao||"")+" · "+g.notas.length+" NF",destinatario:cfg.razao,empresa:rootOf(cfg.cnpj)}); toast("Emissão registrada") }
 });
-function baGuideCalc(per){ return calcAll().filter(c=>periodoBA(c.n)===per) }
+function baGuideCalc(per){ return calcAllRaw().filter(c=>periodoBA(c.n)===per&&!precisaValidar(c.n)) }
 async function memoriaBA(per){
   if(!window.jspdf||!window.jspdf.jsPDF){toast("Gerador de PDF não carregou — recarregue a página");return}
-  const calc=baGuideCalc(per); const g=buildGuidesBA(calc)[0];
+  const calc=baGuideCalc(per); const g=buildGuidesBA(calc).find(x=>x.kind==="parcial");
   const rows=calc.flatMap(c=>c.rows.filter(r=>r.status==="parcial").map(r=>({...r,n:c.n})));
   if(!rows.length){toast("Nenhum item de antecipação parcial neste período");return}
   const {jsPDF}=window.jspdf; const doc=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"}); const W=297,M=12; let y=14;
@@ -1249,20 +1319,24 @@ async function memoriaBA(per){
 }
 async function xlsxBA(per){
   if(!window.XLSX){toast("Biblioteca da planilha não carregou");return}
-  const calc=per?baGuideCalc(per):calcAll();
+  const calc=per?baGuideCalc(per):calcAll().filter(c=>!precisaValidar(c.n));
+  const ws=itensSheetBA(calc); if(!ws){toast("Nenhum item de antecipação parcial para exportar");return}
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Antecipação parcial");
+  const buf=XLSX.write(wb,{bookType:"xlsx",type:"array"});
+  await saveFile(`ANTECIPACAO PARCIAL ${(cfg.razao||"").split(" ")[0]} ${per?per.slice(5,7)+"-"+per.slice(0,4):todayISO()}.xlsx`,new Blob([buf]));
+}
+function itensSheetBA(calc){
   const H=["Mês de Referência","Número do Documento","Data da Emissão","Chave","Valor do Documento","Nome do participante","CNPJ","UF Origem","Número do Item","Código do Produto/Item","Descrição do Produto/Item","Valor do Item","Valor do Desconto","CST ICMS","CFOP","Valor da Base de ICMS","Alíquota De ICMS","Valor do ICMS","Valor da Base Antecipação","Alíquota Antecipação","Valor Antecipação","Diferença","NCM","CEST","Classificação","Fundamento"];
   const aoa=[H]; let row=2;
   for(const {n,rows} of calc) for(const r of rows){ if(r.status!=="parcial") continue; const it=r.it, mes=new Date(periodoBA(n)+"-15T12:00:00").toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
     aoa.push([mes.charAt(0).toUpperCase()+mes.slice(1),n.nNF,new Date(n.dhEmi.slice(0,10)+"T12:00:00"),n.chave,n.vNF,n.emit.nome,fmtCnpj(n.emit.cnpj),n.emit.uf,it.nItem,it.cProd,it.xProd,r2(it.vProd+(cfg.ipiNaBase?it.vIPI:0)+(cfg.freteNaBase?it.vFrete:0)),it.vDesc,(it.orig||"")+(it.cst||""),it.cfop,it.vBC,it.pICMS,it.vICMS,
       {f:`L${row}-M${row}`},Math.round(r.carga*100)/10000,{f:`S${row}*T${row}`},{f:`MAX(0,U${row}-R${row})`},r.cls.ncmUso,it.cest,r.cls.origem==="regra"?"decisão cadastrada":r.cls.origem==="empresa"?"tabela da empresa":r.cls.origem==="anexo1"?"Anexo 1":"padrão",r.cls.cargaRef]); row++ }
-  if(row===2){toast("Nenhum item de antecipação parcial para exportar");return}
+  if(row===2) return null;
   aoa.push([]); const t=[]; t[20]="TOTAL"; t[21]={f:`ROUND(SUM(V2:V${row-1}),2)`}; aoa.push(t);
   const ws=XLSX.utils.aoa_to_sheet(aoa,{cellDates:true});
   for(let rr=2;rr<row;rr++){ const d=ws["C"+rr]; if(d)d.z="dd/mm/yyyy"; ["E","L","M","P","R","S","U","V"].forEach(c=>{const x=ws[c+rr];if(x)x.z="#,##0.00"}); const a=ws["T"+rr]; if(a)a.z="0.0%" }
   ws["!cols"]=H.map((h,i)=>({wch:[3,5,10].includes(i)?36:i===25?60:Math.max(10,h.length+2)}));
-  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Antecipação parcial");
-  const buf=XLSX.write(wb,{bookType:"xlsx",type:"array"});
-  await saveFile(`ANTECIPACAO PARCIAL ${(cfg.razao||"").split(" ")[0]} ${per?per.slice(5,7)+"-"+per.slice(0,4):todayISO()}.xlsx`,new Blob([buf]));
+  return ws;
 }
 function baConsultaCard(q){
   if(!BASE_BA) return `<div class="note-card"><div><b>Base legal da BA carregando…</b></div></div>`;
@@ -1291,6 +1365,199 @@ function renderBaseBA(){
   $("#baseTbl").innerHTML=`<thead><tr><th>Fonte</th><th>NCM</th><th>Tratamento</th></tr></thead><tbody>`+f.slice(0,300).map(r=>`<tr><td style="font-size:12px">${esc(r[0])}</td><td class="mono">${ncmFmt(r[1])}</td><td>${esc(r[2])}</td></tr>`).join("")+"</tbody>";
   $("#normasList").innerHTML=BASE_BA.normas.map(n=>`<div class="note-card"><div><b>${esc(n.ref)}</b><div class="muted" style="font-size:13px">${esc(n.txt)}</div></div><div><a class="btn" href="${esc(n.url)}" target="_blank" rel="noopener">Ler ↗</a></div></div>`).join("");
 }
+/* ---------- apuração mensal: alertas de mês + relatórios ---------- */
+function baMesLine(n){
+  const emi=(n.dhEmi||"").slice(0,7), per=periodoBA(n);
+  let st="";
+  if(per!==emi&&!n.validMes) st=`<span class="pill bad">emitida em ${esc(apurLbl(emi))} · fora do mês</span> <button class="primary" style="padding:2px 8px;font-size:12px" data-valmes="${esc(n.id)}">Validar</button> <button class="ghost" style="padding:2px 4px;font-size:12px" data-movemes="${esc(n.id)}">mover para ${esc(apurLbl(emi))}</button>`;
+  else if(per!==emi) st=`<span class="pill ok">fora do mês · validada${n.validMes.por?" por "+esc(n.validMes.por):""} em ${brDate(n.validMes.em)}</span>`;
+  return `<div class="row" style="gap:6px;align-items:center;font-size:12px;margin-top:4px"><label class="faint">Apuração <input type="month" data-refper="${esc(n.id)}" value="${esc(per)}" style="padding:2px 4px;font-size:12px"></label>${st}</div>`;
+}
+function validarNotas(ids){
+  const por=(window.__siteUser&&window.__siteUser.email)||"", em=new Date().toISOString(); let k=0;
+  ids.forEach(id=>{const n=notes.find(x=>x.id===id); if(n&&precisaValidar(n)){n.validMes={por,em};pushNote(n);k++}});
+  saveNotes(); renderAll(); toast(k+" nota(s) validada(s) na apuração");
+}
+document.addEventListener("click",e=>{
+  const v=e.target.closest("[data-valmes]"); if(v){validarNotas(v.dataset.valmes.split("|"));return}
+  const m=e.target.closest("[data-movemes]"); if(m){const n=notes.find(x=>x.id===m.dataset.movemes); if(n){n.refPer=(n.dhEmi||"").slice(0,7); delete n.validMes; saveNotes(); pushNote(n); renderAll(); toast("NF "+n.nNF+" movida para a apuração "+apurLbl(n.refPer))} return}
+  const r=e.target.closest("[data-relmes]"); if(r){setApur(r.dataset.relmes,false);return}
+});
+function setApur(p,todas){ if(p&&/^\d{4}-\d{2}$/.test(p)) apur=p; if(todas!=null) apurTodas=todas; lsSet("st_apur",apur); lsSet("st_apur_all",apurTodas); $("#apurSel").value=apur; $("#apurAll").checked=apurTodas; renderAll(); }
+$("#apurSel").addEventListener("change",e=>setApur(e.target.value,false));
+$("#apurPrev").addEventListener("click",()=>setApur(shiftMes(apur,-1),false));
+$("#apurNext").addEventListener("click",()=>setApur(shiftMes(apur,1),false));
+$("#apurAll").addEventListener("change",e=>setApur(null,e.target.checked));
+function guiaDoMes(per){return hist[`BA-${rootOf(cfg.cnpj)}-${per}`]}
+function renderApurBar(calc,guides){
+  const a=apurAtiva(), pv=calc.filter(c=>precisaValidar(c.n)).length;
+  const st=k=>{const g=guides.find(x=>x.kind===k); if(!g) return "—"; const h=hist[g.id]; return `<b class="mono">R$ ${fmt(g.valor)}</b> ${h?(h.status==="paga"?'<span class="pill ok">pago</span>':'<span class="pill acc">emitido</span>'):'<span class="pill warn">a emitir</span>'}`};
+  $("#apurInfo").innerHTML=a?`${calc.length} nota(s) · parcial ${st("parcial")} · ST ${st("st")}${pv?` · <span class="pill bad">${pv} aguardando validação</span>`:""}`:`Mostrando todas as apurações (${calc.length} notas)`;
+  const hint=$("#impHint"); if(hint) hint.innerHTML=a?`As notas que você importar entram na apuração <b>${esc(apurLbl(a))}</b>. Notas emitidas em outro mês (mercadoria que chegou depois) são aceitas, mas ficam com alerta até alguém clicar em <b>Validar</b>.`:`Com “ver todas” marcado, cada nota entra na apuração do mês de emissão. Desmarque para escolher o mês.`;
+}
+/* dados do relatório */
+function relData(per,raw){
+  const sum=(a,k)=>a.reduce((s,r)=>s+(r[k]||0),0);
+  const calc=(raw||calcAllRaw()).filter(c=>periodoBA(c.n)===per);
+  const notas=calc.map(c=>{const par=c.rows.filter(r=>r.status==="parcial");const sr=c.rows.filter(r=>r.st);return {n:c.n,par,sr,base:sum(par,"base"),antec:sum(par,"antec"),cred:sum(par,"cred"),dif:sum(par,"icmsRaw"),stv:sr.reduce((a,r)=>a+r.st.raw,0),st:sr.length,fora:isForaMes(c.n),pend:precisaValidar(c.n)}}).sort((a,b)=>(a.n.dhEmi||"").localeCompare(b.n.dhEmi||""));
+  const ok=notas.filter(x=>!x.pend);
+  const tot={notas:notas.length,ok:ok.length,fora:notas.filter(x=>x.fora&&!x.pend).length,pend:notas.filter(x=>x.pend).length,itens:ok.reduce((s,x)=>s+x.par.length,0),st:ok.reduce((s,x)=>s+x.st,0),base:sum(ok,"base"),antec:sum(ok,"antec"),cred:sum(ok,"cred"),dif:r2(sum(ok,"dif")),stv:r2(sum(ok,"stv")),vNF:sum(ok.map(x=>({v:x.n.vNF})),"v")};
+  const fm={}; ok.forEach(x=>{const k=rootOf(x.n.emit.cnpj)||x.n.emit.nome; const f=(fm[k]=fm[k]||{nome:x.n.emit.nome,cnpj:x.n.emit.cnpj,uf:x.n.emit.uf,notas:0,vNF:0,base:0,dif:0}); f.notas++; f.vNF+=x.n.vNF||0; f.base+=x.base; f.dif+=x.dif; f.stv=(f.stv||0)+x.stv});
+  const nm={}; ok.forEach(x=>x.par.forEach(r=>{const k=r.cls.ncmUso+"|"+r.carga; const g=(nm[k]=nm[k]||{ncm:r.cls.ncmUso,carga:r.carga,orig:r.cls.origem,itens:0,base:0,antec:0,cred:0,dif:0}); g.itens++; g.base+=r.base; g.antec+=r.antec; g.cred+=r.cred; g.dif+=r.icmsRaw}));
+  const sm={}; ok.forEach(x=>x.sr.forEach(r=>{const k=r.cls.ncmUso+"|"+r.st.mva; const g=(sm[k]=sm[k]||{ncm:r.cls.ncmUso,mva:r.st.mva,itens:0,bc:0,icms:0,ded:0,dif:0}); g.itens++; g.bc+=r.st.bc; g.icms+=r.st.icms; g.ded+=r.st.proprio+r.st.retido; g.dif+=r.st.raw}));
+  return {per,notas,ok,tot,forn:Object.values(fm).sort((a,b)=>b.dif-a.dif),ncm:Object.values(nm).sort((a,b)=>b.dif-a.dif),ncmST:Object.values(sm).sort((a,b)=>b.dif-a.dif),guia:guiaDoMes(per),guiaST:hist[`BAST-${rootOf(cfg.cnpj)}-${per}`],venc:vencBA(per)};
+}
+const ORIG_LBL={regra:"decisão cadastrada",empresa:"tabela da empresa",anexo1:"Anexo 1",padrao:"padrão"};
+function daePill(h,v){return h?`<span class="pill ${h.status==="paga"?"ok":"acc"}">${h.status==="paga"?"pago":"emitido"}</span> <span class="mono faint" style="font-size:11px">${esc(h.controle||"")}</span>${h.valor!=null&&Math.abs(h.valor-v)>0.009?` <span class="pill warn">DAE R$ ${fmt(h.valor)} ≠ apuração</span>`:""}`:(v>0?'<span class="pill warn">a emitir</span>':"—")}
+function daeTxt(h,v){return h?(h.status==="paga"?"DAE pago":"DAE emitido")+(h.controle?" · "+esc(h.controle):""):(v>0?"DAE a emitir":"—")}
+function relSituacao(x){return x.pend?"fora do mês — aguardando validação":x.fora?`fora do mês (emitida ${apurLbl((x.n.dhEmi||"").slice(0,7))}) — validada${x.n.validMes&&x.n.validMes.por?" por "+x.n.validMes.por:""}${x.n.validMes?" em "+brDate(x.n.validMes.em):""}`:"no mês"}
+function renderRel(){
+  if(!$("#relSum")||tab!=="relatorios"||!isBA()) return;
+  const raw=calcAllRaw(); const per=apur; const d=relData(per,raw); const t=d.tot, g=d.guia;
+  $("#relPer").textContent=apurLbl(per);
+  $("#relSum").innerHTML=`
+    <div><div class="label">Notas na apuração</div><div class="v">${t.notas}</div></div>
+    <div><div class="label">Fora do mês (validadas)</div><div class="v">${t.fora}</div></div>
+    <div><div class="label">Aguardando validação</div><div class="v" style="color:${t.pend?"var(--bad)":"inherit"}">${t.pend}</div></div>
+    <div><div class="label">Itens antecip. parcial</div><div class="v">${t.itens}</div></div>
+    <div><div class="label">Base</div><div class="v">${fmt(t.base)}</div></div>
+    <div><div class="label">Antecipação</div><div class="v">${fmt(t.antec)}</div></div>
+    <div><div class="label">(−) ICMS destacado</div><div class="v">${fmt(t.cred)}</div></div>
+    <div><div class="label">Parcial a recolher (2175)</div><div class="v accent">${fmt(t.dif)}</div><div class="faint" style="font-size:11px">${daeTxt(g,t.dif)}</div></div>
+    <div><div class="label">ST a recolher (1145)</div><div class="v accent">${fmt(t.stv)}</div><div class="faint" style="font-size:11px">${daeTxt(d.guiaST,t.stv)}</div></div>
+    <div><div class="label">Vencimento</div><div class="v" style="font-size:15px">${brDate(d.venc)}</div></div>`;
+  if(!d.notas.length){$("#relBody").innerHTML=`<div class="empty">Nenhuma nota na apuração ${esc(apurLbl(per))}.</div>`}
+  else $("#relBody").innerHTML=`
+    <h3 style="margin:0 0 6px">Notas fiscais</h3><div class="tbl-wrap"><table><thead><tr><th>NF-e</th><th>Emissão</th><th>Fornecedor</th><th>UF</th><th class="num">Valor NF</th><th class="num">Itens parc.</th><th class="num">Base parcial</th><th class="num">Parcial</th><th class="num">ST</th><th>Situação</th></tr></thead><tbody>
+    ${d.notas.map(x=>`<tr${x.pend?' style="color:var(--bad)"':""}><td class="mono">${esc(x.n.nNF)}</td><td>${brDate(x.n.dhEmi)}</td><td>${esc(x.n.emit.nome)}</td><td>${esc(x.n.emit.uf)}</td><td class="num">${fmt(x.n.vNF)}</td><td class="num">${x.par.length}</td><td class="num">${fmt(x.base)}</td><td class="num"><b>${fmt(x.dif)}</b></td><td class="num"><b>${fmt(x.stv)}</b></td><td style="font-size:12px">${esc(relSituacao(x))}${x.pend?` <button class="ghost" style="padding:0 4px;font-size:12px" data-valmes="${esc(x.n.id)}">Validar</button>`:""}</td></tr>`).join("")}
+    <tr class="sub"><td colspan="4">Total (sem as aguardando validação)</td><td class="num">${fmt(t.vNF)}</td><td class="num">${t.itens}</td><td class="num">${fmt(t.base)}</td><td class="num"><b>${fmt(t.dif)}</b></td><td class="num"><b>${fmt(t.stv)}</b></td><td></td></tr></tbody></table></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-top:16px">
+    <div><h3 style="margin:0 0 6px">Por fornecedor</h3><div class="tbl-wrap"><table><thead><tr><th>Fornecedor</th><th>UF</th><th class="num">Notas</th><th class="num">Parcial</th><th class="num">ST</th></tr></thead><tbody>${d.forn.map(f=>`<tr><td>${esc(f.nome)}<div class="faint mono" style="font-size:11px">${esc(fmtCnpj(f.cnpj))}</div></td><td>${esc(f.uf)}</td><td class="num">${f.notas}</td><td class="num">${fmt(f.dif)}</td><td class="num">${fmt(f.stv||0)}</td></tr>`).join("")}</tbody></table></div></div>
+    <div><h3 style="margin:0 0 6px">ST por NCM / MVA</h3><div class="tbl-wrap"><table><thead><tr><th>NCM</th><th class="num">MVA orig.</th><th class="num">Itens</th><th class="num">BC ST</th><th class="num">ICMS ST</th><th class="num">(−) NF/retido</th><th class="num">A recolher</th></tr></thead><tbody>${d.ncmST.map(x=>`<tr><td class="mono">${ncmFmt(x.ncm)}</td><td class="num">${pct(x.mva)}</td><td class="num">${x.itens}</td><td class="num">${fmt(x.bc)}</td><td class="num">${fmt(x.icms)}</td><td class="num">${fmt(x.ded)}</td><td class="num">${fmt(x.dif)}</td></tr>`).join("")}</tbody></table></div></div>
+    <div><h3 style="margin:0 0 6px">Parcial por NCM / alíquota</h3><div class="tbl-wrap"><table><thead><tr><th>NCM</th><th class="num">Alíq.</th><th>Classificação</th><th class="num">Itens</th><th class="num">Base</th><th class="num">A recolher</th></tr></thead><tbody>${d.ncm.map(x=>`<tr><td class="mono">${ncmFmt(x.ncm)}</td><td class="num">${pct(x.carga)}</td><td style="font-size:12px">${esc(ORIG_LBL[x.orig]||x.orig)}</td><td class="num">${x.itens}</td><td class="num">${fmt(x.base)}</td><td class="num">${fmt(x.dif)}</td></tr>`).join("")}</tbody></table></div></div></div>`;
+  // anual
+  const sel=$("#relAno"), anos=new Set([per.slice(0,4)]); notesAtivas().forEach(n=>anos.add(periodoBA(n).slice(0,4)));
+  const cur=sel.value&&anos.has(sel.value)?sel.value:per.slice(0,4);
+  sel.innerHTML=[...anos].filter(Boolean).sort().reverse().map(y=>`<option ${y===cur?"selected":""}>${y}</option>`).join("");
+  const meses=Array.from({length:12},(_,i)=>cur+"-"+String(i+1).padStart(2,"0")); let ta=0,ts=0,tn=0;
+  $("#relAnoTbl").innerHTML=`<thead><tr><th>Mês</th><th class="num">Notas</th><th class="num">Fora do mês</th><th class="num">Aguardando</th><th class="num">Parcial</th><th>DAE parcial</th><th class="num">ST</th><th>DAE ST</th><th>Vencimento</th></tr></thead><tbody>`+meses.map(m=>{const r=relData(m,raw), t=r.tot, h=r.guia; ta+=t.dif; ts+=t.stv; tn+=t.notas; if(!t.notas&&!h&&!r.guiaST) return `<tr class="faint"><td><button class="ghost" style="padding:0" data-relmes="${m}">${apurLbl(m)}</button></td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td>—</td><td class="num">—</td><td>—</td><td>${brDate(r.venc)}</td></tr>`;
+    return `<tr${m===per?' style="background:var(--accent-soft)"':""}><td><button class="ghost" style="padding:0;font-weight:600" data-relmes="${m}">${apurLbl(m)}</button></td><td class="num">${t.notas}</td><td class="num">${t.fora}</td><td class="num" style="color:${t.pend?"var(--bad)":"inherit"}">${t.pend||"—"}</td><td class="num"><b>${fmt(t.dif)}</b></td><td>${daePill(h,t.dif)}</td><td class="num"><b>${fmt(t.stv)}</b></td><td>${daePill(r.guiaST,t.stv)}</td><td>${brDate(r.venc)}</td></tr>`}).join("")+`<tr class="sub"><td>Total ${cur}</td><td class="num">${tn}</td><td></td><td></td><td class="num"><b>${fmt(r2(ta))}</b></td><td></td><td class="num"><b>${fmt(r2(ts))}</b></td><td colspan="2"></td></tr></tbody>`;
+}
+$("#relAno").addEventListener("change",()=>renderRel());
+/* exportações do relatório */
+$("#btnRelPdf").addEventListener("click",()=>relPDF(apur));
+$("#btnRelXlsx").addEventListener("click",()=>relXlsx(apur));
+$("#btnRelZip").addEventListener("click",()=>relZip(apur));
+const relNome=per=>`${(cfg.razao||"").split(" ")[0]} ${per.slice(5,7)}-${per.slice(0,4)}`;
+async function relPDF(per){
+  if(!window.jspdf||!window.jspdf.jsPDF){toast("Gerador de PDF não carregou — recarregue a página");return}
+  const d=relData(per), t=d.tot; if(!d.notas.length){toast("Nenhuma nota nesta apuração");return}
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"}); const W=297,M=12; let y=14;
+  const ink=[21,32,28],mute=[95,110,104],acc=[29,107,82];
+  doc.setFont("helvetica","bold");doc.setFontSize(14);doc.setTextColor(...ink);doc.text(pdfTxt(`Relatório de apuração — ICMS Antecipação Parcial (BA) · ${apurLbl(per)}`),M,y);
+  doc.setFont("helvetica","normal");doc.setFontSize(9);doc.setTextColor(...mute);doc.text(pdfTxt(`${cfg.razao||""} · CNPJ ${fmtCnpj(cfg.cnpj)} · IE ${cfg.ie||""} · gerado em ${new Date().toLocaleString("pt-BR")}${window.__siteUser?" por "+window.__siteUser.email:""}`),M,y+5); y+=10;
+  const g=d.guia;
+  const tiles=[["Notas",String(t.notas)],["Fora do mês",String(t.fora)],["Aguardando",String(t.pend)],["Itens parcial",String(t.itens)],["Base",fmt(t.base)],["Antecipação",fmt(t.antec)],["(-) ICMS destacado",fmt(t.cred)],["Parcial (2175)",fmt(t.dif)],["ST (1145)",fmt(t.stv)]];
+  const tw=(W-2*M)/tiles.length;
+  tiles.forEach(([k,v],i)=>{const x=M+i*tw;doc.setDrawColor(210,219,215);doc.rect(x,y,tw,13);doc.setFontSize(6.6);doc.setTextColor(...mute);doc.text(pdfTxt(k.toUpperCase()),x+2,y+4.5);doc.setFontSize(9.5);doc.setTextColor(...(/2175|1145/.test(k)?acc:ink));doc.setFont("helvetica","bold");doc.text(doc.splitTextToSize(pdfTxt(v),tw-4)[0],x+2,y+10);doc.setFont("helvetica","normal")});
+  y+=17; doc.setFontSize(8);doc.setTextColor(...mute);doc.text(pdfTxt(`DAE antecipação parcial (2175): ${daeTxt(g,t.dif)} · DAE antecipação tributária/ST (1145): ${daeTxt(d.guiaST,t.stv)} · referência ${apurLbl(per)} · vencimento ${brDate(d.venc)}${t.pend?` · ${t.pend} nota(s) aguardando validação NÃO estão somadas`:""}`),M,y); y+=3;
+  const tbl=(head,body,foot,cols,title)=>{ if(title){ if(y>180){doc.addPage();y=16} doc.setFont("helvetica","bold");doc.setFontSize(10);doc.setTextColor(...ink);doc.text(pdfTxt(title),M,y+5);y+=7;doc.setFont("helvetica","normal")}
+    doc.autoTable({startY:y,margin:{left:M,right:M},head:[head],body,foot:foot?[foot]:undefined,theme:"grid",styles:{font:"helvetica",fontSize:7.4,cellPadding:1.3,textColor:ink,lineColor:[210,219,215]},headStyles:{fillColor:acc,textColor:255,fontStyle:"bold"},footStyles:{fillColor:[216,238,230],textColor:ink,fontStyle:"bold"},columnStyles:cols}); y=doc.lastAutoTable.finalY+4 };
+  const R={halign:"right"};
+  tbl(["NF-e","Emissão","Fornecedor","UF","Valor NF","Itens parc.","Base parcial","Parcial","Itens ST","ST","Situação"],
+    d.notas.map(x=>[x.n.nNF,brDate(x.n.dhEmi),pdfTxt(x.n.emit.nome).slice(0,38),x.n.emit.uf,fmt(x.n.vNF),String(x.par.length),fmt(x.base),fmt(x.dif),String(x.st),fmt(x.stv),pdfTxt(relSituacao(x))]),
+    ["","","Total (validadas)","",fmt(t.vNF),String(t.itens),fmt(t.base),fmt(t.dif),"",fmt(t.stv),""],{4:R,5:R,6:R,7:{halign:"right",fontStyle:"bold"},8:R,9:{halign:"right",fontStyle:"bold"},10:{cellWidth:62}},"Notas fiscais da apuração");
+  tbl(["Fornecedor","CNPJ","UF","Notas","Valor NF","Parcial","ST"],d.forn.map(f=>[pdfTxt(f.nome),fmtCnpj(f.cnpj),f.uf,String(f.notas),fmt(f.vNF),fmt(f.dif),fmt(f.stv||0)]),null,{3:R,4:R,5:R,6:R},"Por fornecedor");
+  if(d.ncmST.length) tbl(["NCM","MVA original","Itens","BC ST","ICMS ST","(-) ICMS NF / ST retido","A recolher"],d.ncmST.map(x=>[ncmFmt(x.ncm),pct(x.mva),String(x.itens),fmt(x.bc),fmt(x.icms),fmt(x.ded),fmt(x.dif)]),null,{1:R,2:R,3:R,4:R,5:R,6:R},"Antecipação tributária (ST) por NCM / MVA");
+  tbl(["NCM","Alíquota","Classificação","Itens","Base","Antecipação","(-) ICMS","A recolher"],d.ncm.map(x=>[ncmFmt(x.ncm),pct(x.carga),pdfTxt(ORIG_LBL[x.orig]||x.orig),String(x.itens),fmt(x.base),fmt(x.antec),fmt(x.cred),fmt(x.dif)]),null,{1:R,3:R,4:R,5:R,6:R,7:R},"Antecipação parcial por NCM / alíquota");
+  const fora=d.notas.filter(x=>x.fora);
+  if(fora.length) tbl(["NF-e","Emissão","Lançada em","Situação"],fora.map(x=>[x.n.nNF,brDate(x.n.dhEmi),apurLbl(per),pdfTxt(relSituacao(x))]),null,{},"Notas emitidas fora do mês da apuração");
+  const pages=doc.getNumberOfPages(); for(let i=1;i<=pages;i++){doc.setPage(i);doc.setFontSize(7.5);doc.setTextColor(...mute);doc.text(pdfTxt(`${cfg.razao||""} · relatório de apuração ${apurLbl(per)} · página ${i}/${pages}`),M,205)}
+  await saveFile(`RELATORIO APURACAO ANTECIPACAO PARCIAL ${relNome(per)}.pdf`,doc.output("blob"));
+}
+async function relXlsx(per){
+  if(!window.XLSX){toast("Biblioteca da planilha não carregou");return}
+  const d=relData(per), t=d.tot; if(!d.notas.length){toast("Nenhuma nota nesta apuração");return}
+  const wb=XLSX.utils.book_new(), g=d.guia;
+  const res=[["Relatório de apuração — ICMS Antecipação Parcial (BA)"],[cfg.razao||"","CNPJ "+fmtCnpj(cfg.cnpj),"IE "+(cfg.ie||"")],["Apuração",apurLbl(per)],["Gerado em",new Date().toLocaleString("pt-BR")],[],
+    ["Notas na apuração",t.notas],["Fora do mês (validadas)",t.fora],["Aguardando validação (não somadas)",t.pend],["Itens na antecipação parcial",t.itens],["Itens ST / retida (fora)",t.st],["Base",r2(t.base)],["Antecipação",r2(t.antec)],["(-) ICMS destacado",r2(t.cred)],["Antecipação parcial a recolher (2175)",t.dif],["Antecipação tributária / ST a recolher (1145)",t.stv],[],
+    ["Vencimento",brDate(d.venc)],["DAE parcial (2175)",daeTxt(g,t.dif)],["Valor registrado DAE parcial",g&&g.valor!=null?g.valor:""],["DAE ST (1145)",daeTxt(d.guiaST,t.stv)],["Valor registrado DAE ST",d.guiaST&&d.guiaST.valor!=null?d.guiaST.valor:""]];
+  const ws1=XLSX.utils.aoa_to_sheet(res); ws1["!cols"]=[{wch:36},{wch:28},{wch:20}]; XLSX.utils.book_append_sheet(wb,ws1,"Resumo");
+  const ws2=XLSX.utils.aoa_to_sheet([["NF-e","Série","Chave","Emissão","Fornecedor","CNPJ","UF","Valor NF","Itens parcial","Base","Antecipação","(-) ICMS","Parcial a recolher","Itens ST","ST a recolher","Situação","Validado por","Validado em"],
+    ...d.notas.map(x=>[x.n.nNF,x.n.serie,x.n.chave,brDate(x.n.dhEmi),x.n.emit.nome,fmtCnpj(x.n.emit.cnpj),x.n.emit.uf,x.n.vNF,x.par.length,r2(x.base),r2(x.antec),r2(x.cred),r2(x.dif),x.st,r2(x.stv),relSituacao(x),x.n.validMes?x.n.validMes.por||"":"",x.n.validMes?brDate(x.n.validMes.em):""])]);
+  ws2["!cols"]=[8,6,46,11,36,20,4,12,8,12,12,12,12,40,26,11].map(w=>({wch:w})); XLSX.utils.book_append_sheet(wb,ws2,"Notas");
+  const wi=itensSheetBA(baGuideCalc(per)); if(wi) XLSX.utils.book_append_sheet(wb,wi,"Itens parcial");
+  const sr=stRowsBA(per); if(sr.length) XLSX.utils.book_append_sheet(wb,stSheetBA(sr),"Itens ST");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["Fornecedor","CNPJ","UF","Notas","Valor NF","Parcial","ST"],...d.forn.map(f=>[f.nome,fmtCnpj(f.cnpj),f.uf,f.notas,r2(f.vNF),r2(f.dif),r2(f.stv||0)])]),"Fornecedores");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["NCM","Alíquota %","Classificação","Itens","Base","Antecipação","(-) ICMS","A recolher"],...d.ncm.map(x=>[ncmFmt(x.ncm),x.carga,ORIG_LBL[x.orig]||x.orig,x.itens,r2(x.base),r2(x.antec),r2(x.cred),r2(x.dif)])]),"NCM parcial");
+  if(d.ncmST.length) XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["NCM","MVA original %","Itens","BC ST","ICMS ST","(-) ICMS NF / ST retido","A recolher"],...d.ncmST.map(x=>[ncmFmt(x.ncm),x.mva,x.itens,r2(x.bc),r2(x.icms),r2(x.ded),r2(x.dif)])]),"NCM ST");
+  const buf=XLSX.write(wb,{bookType:"xlsx",type:"array"});
+  await saveFile(`RELATORIO APURACAO ANTECIPACAO PARCIAL ${relNome(per)}.xlsx`,new Blob([buf]));
+}
+async function relZip(per){
+  if(!window.JSZip){toast("Compactador não carregou — recarregue a página");return}
+  const d=relData(per); if(!d.notas.length){toast("Nenhuma nota nesta apuração");return}
+  toast("Juntando os XMLs…"); const zip=new JSZip(), falta=[];
+  for(const x of d.notas){ const xml=await getXml(x.n.id); if(xml) zip.file(`${x.n.chave||x.n.nNF}-nfe.xml`,xml); else falta.push(`NF ${x.n.nNF} (${x.n.chave||x.n.fileName})`) }
+  if(falta.length) zip.file("LEIA-ME - XMLs nao armazenados.txt","Estas notas foram importadas antes do sistema guardar os XMLs. Reimporte o XML para incluí-las:\r\n\r\n"+falta.join("\r\n"));
+  if(falta.length===d.notas.length) toast("Nenhum XML guardado para este mês — reimporte os XMLs para armazená-los");
+  const blob=await zip.generateAsync({type:"blob"});
+  await saveFile(`XMLs ANTECIPACAO PARCIAL ${relNome(per)}.zip`,blob);
+}
+
+/* memória e planilha da antecipação total (ST) — receita 1145 */
+function stRowsBA(per){ return baGuideCalc(per).flatMap(c=>c.rows.filter(r=>r.st).map(r=>({...r,n:c.n}))) }
+async function memoriaSTBA(per){
+  if(!window.jspdf||!window.jspdf.jsPDF){toast("Gerador de PDF não carregou — recarregue a página");return}
+  const rows=stRowsBA(per); if(!rows.length){toast("Nenhum item de ST neste período");return}
+  const g=buildGuidesBA(baGuideCalc(per)).find(x=>x.kind==="st");
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"}); const W=297,M=10; let y=14;
+  const ink=[21,32,28],mute=[95,110,104],acc=[29,107,82];
+  doc.setFont("helvetica","bold");doc.setFontSize(14);doc.setTextColor(...ink);doc.text(pdfTxt("Memória de cálculo — ICMS Antecipação Tributária / ST (BA)"),M,y);
+  doc.setFont("helvetica","normal");doc.setFontSize(9);doc.setTextColor(...mute);doc.text(pdfTxt(`Referência ${apurLbl(per)} · gerado em ${new Date().toLocaleDateString("pt-BR")}${cfg.responsavel?" · "+cfg.responsavel:""}`),M,y+5); y+=11;
+  const box=(x,yy,w,title,lines)=>{doc.setDrawColor(210,219,215);doc.roundedRect(x,yy,w,22,1.5,1.5);doc.setFont("helvetica","bold");doc.setFontSize(7.5);doc.setTextColor(...mute);doc.text(pdfTxt(title.toUpperCase()),x+3,yy+5);doc.setFont("helvetica","normal");doc.setFontSize(8.3);doc.setTextColor(...ink);let k=0;lines.filter(Boolean).forEach(l=>{doc.splitTextToSize(pdfTxt(l),w-6).forEach(t=>{if(k<4)doc.text(t,x+3,yy+9.5+k*3.6);k++})})};
+  const bw=(W-2*M-8)/3, nfs=[...new Set(rows.map(r=>r.n.nNF))];
+  box(M,y,bw,"Contribuinte",[cfg.razao,`CNPJ ${fmtCnpj(cfg.cnpj)} · IE ${cfg.ie||""}`,`${cfg.municipio||""}/${cfg.uf||""}`]);
+  box(M+bw+4,y,bw,"Documentos",[`${nfs.length} NF-e de entrada interestadual`,`NF: ${nfs.join(", ")}`]);
+  box(M+2*(bw+4),y,bw,"DAE",[`Receita ${cfg.receitaSTBA||"1145"} · ICMS antecipação tributária · ref. ${apurLbl(per)}`,`Vencimento ${brDate(vencBA(per))}`,`Valor principal R$ ${fmt(g?g.valor:0)}`]);
+  y+=26;
+  const body=rows.map(r=>{const it=r.it,s=r.st;return [r.n.nNF,it.nItem,pdfTxt(it.xProd).slice(0,34),ncmFmt(onlyDigits(r.cls.ncmUso)),it.cfop,fmt(s.base),pct(s.mva),pct(s.inter),pct(s.aj*100),fmt(s.bc),fmt(s.icms),fmt(s.proprio),s.retido?fmt(s.retido):"-",fmt(s.raw)]});
+  const total=g?g.valor:r2(rows.reduce((a,r)=>a+r.st.raw,0));
+  doc.autoTable({startY:y,margin:{left:M,right:M},head:[["NF","It.","Descrição","NCM","CFOP","Valor+IPI+desp.","MVA orig.","Alíq. inter","MVA ajust.","BC ST","ICMS ST 20,5%","(-) ICMS NF","(-) ST retido","A recolher"]],body,
+    foot:[["","","","","","","","","","","","","Total",fmt(total)]],theme:"grid",styles:{font:"helvetica",fontSize:7,cellPadding:1.1,textColor:ink,lineColor:[210,219,215]},headStyles:{fillColor:acc,textColor:255,fontStyle:"bold"},footStyles:{fillColor:[216,238,230],textColor:ink,fontStyle:"bold"},
+    columnStyles:{2:{cellWidth:52},5:{halign:"right"},6:{halign:"right"},7:{halign:"right"},8:{halign:"right"},9:{halign:"right"},10:{halign:"right"},11:{halign:"right"},12:{halign:"right"},13:{halign:"right",fontStyle:"bold"}}});
+  y=doc.lastAutoTable.finalY+5; doc.setFontSize(8);doc.setTextColor(...mute);
+  ["BC ST = (valor do item + IPI + frete + seguro + outras despesas - desconto) x (1 + MVA ajustada).   MVA ajustada = [(1 + MVA original) x (1 - alíq. interestadual) / (1 - 20,5%)] - 1, com 4 casas; sem ajuste quando a NF não destaca ICMS.",
+   "ICMS ST a recolher = BC ST x 20,5% - ICMS destacado na NF-e - ICMS ST já retido pelo fornecedor (resultado negativo = zero, não compensa outros itens). Total do período arredondado ao centavo, como no DAE."].forEach(t=>{doc.splitTextToSize(pdfTxt(t),W-2*M).forEach(l=>{doc.text(l,M,y);y+=3.7})}); y+=2;
+  const fund=[]; rows.forEach(r=>{[r.st.mvaRef].concat(r.legal.fund.filter(f=>!/^Antecipação total/.test(f))).forEach(f=>{const t=f.replace(/^NCM \S+ /,"NCM "+ncmFmt(r.cls.ncmUso)+" ");if(!fund.includes(t))fund.push(t)})});
+  const obs=[]; rows.forEach(r=>r.legal.conferir.forEach(x=>{const t=`NF ${r.n.nNF} it. ${r.it.nItem}: ${x}`;if(!obs.includes(t))obs.push(t)}));
+  const normas=["Lei 7.014/96 (BA), art. 8º, §4º, e art. 23, II — antecipação do imposto nas entradas interestaduais de mercadorias sujeitas à substituição tributária; base de cálculo com MVA.","RICMS-BA/2012 (Dec. 13.780/2012), art. 289 e Anexo 1 — mercadorias sujeitas à antecipação/ST e respectivas MVA; MVA ajustada nas operações interestaduais."];
+  const secs=[["Fundamentação aplicada",fund],["Normas de referência",normas]]; if(obs.length) secs.push(["Pontos de atenção",obs]);
+  for(const [t,list] of secs){ if(y>185){doc.addPage();y=16}
+    doc.setFont("helvetica","bold");doc.setFontSize(9.5);doc.setTextColor(...ink);doc.text(pdfTxt(t),M,y);y+=4.5;doc.setFont("helvetica","normal");doc.setFontSize(8.2);
+    for(const l of list){const ls=doc.splitTextToSize(pdfTxt("• "+l),W-2*M); if(y+ls.length*3.8>200){doc.addPage();y=16} doc.text(ls,M,y); y+=ls.length*3.8+0.8;} y+=2; }
+  const pages=doc.getNumberOfPages(); for(let i=1;i<=pages;i++){doc.setPage(i);doc.setFontSize(7.5);doc.setTextColor(...mute);doc.text(pdfTxt(`${cfg.razao||""} · antecipação tributária (ST) ${apurLbl(per)} · página ${i}/${pages}`),M,205)}
+  await saveFile(`MEMORIA ANTECIPACAO ST ${per.slice(5,7)}-${per.slice(0,4)} ${(cfg.razao||"").split(" ")[0]}.pdf`,doc.output("blob"));
+}
+function stSheetBA(rows){
+  const H=["Nome Emit.","UF Emitente","IE Dest.","Nome Dest.","UF Dest.","Núm. Nota","Data Emi.","Descr. Item","NCM","CFOP","Alíq. ICMS","Unidade","Quantidade","Vl. Unitário","VL. Total","VL. IPI","VL. Frete","VL. Seguro","VL. Desconto","Vl. Outros","VL. Líquido","Base ICMS","Perc. Redução","VL. ICMS","IVA","Alíq. ICMS S.T.","Base ICMS S.T.","VL. ICMS S.T.","VALOR TOTAL DO ITEM","IVA CORRETO","REDUÇÃO","BASE ICMS ST","REDUCAO","VALOR ICMS ST","DIFERENÇA A RECOLHER","MVA ORIGINAL","FUNDAMENTO MVA"];
+  const aoa=[[],H]; let row=3;
+  for(const r of rows){ const it=r.it,n=r.n,s=r.st;
+    aoa.push([n.emit.nome,n.emit.uf,n.dest.ie,n.dest.nome,n.dest.uf,n.nNF,new Date(n.dhEmi.slice(0,10)+"T12:00:00"),it.xProd,onlyDigits(it.ncm),it.cfop,it.pICMS,it.uCom,it.qCom,r2(it.vProd/(it.qCom||1)),it.vProd,it.vIPI,it.vFrete,it.vSeg,it.vDesc,it.vOutro,r2(it.vProd-it.vDesc),it.vBC,it.pRedBC||0,it.vICMS,it.pMVAST||0,s.aliq/100,it.vBCST||0,it.vICMSST,
+      {f:`O${row}+P${row}+Q${row}+R${row}+T${row}-S${row}`},s.aj,0,{f:`AC${row}*AD${row}+AC${row}`},"",{f:`AF${row}*Z${row}`},{f:`MAX(0,AH${row}-X${row}-AB${row})`},s.mva/100,s.mvaRef]); row++ }
+  aoa.push([]); const t=[]; t[33]="TOTAL"; t[34]={f:`ROUND(SUM(AI3:AI${row-1}),2)`}; aoa.push(t); aoa[0][34]={f:`SUM(AI3:AI${row-1})`};
+  const ws=XLSX.utils.aoa_to_sheet(aoa,{cellDates:true});
+  for(let rr=3;rr<row;rr++){ const d=ws["G"+rr]; if(d)d.z="dd/mm/yyyy"; ["N","O","P","Q","R","S","T","U","V","X","AA","AB","AC","AF","AH","AI"].forEach(c=>{const x=ws[c+rr];if(x)x.z="#,##0.00"}); ["AD","AJ"].forEach(c=>{const x=ws[c+rr];if(x)x.z="0.00%"}) }
+  ws["!cols"]=H.map((h,i)=>({wch:i===7||i===0||i===3?34:i===36?60:Math.max(10,h.length+2)}));
+  return ws;
+}
+async function xlsxSTBA(per){
+  if(!window.XLSX){toast("Biblioteca da planilha não carregou");return}
+  const rows=stRowsBA(per); if(!rows.length){toast("Nenhum item de ST neste período");return}
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,stSheetBA(rows),"Antecipação ST");
+  await saveFile(`MEMORIA DE CALCULO ANTECIPACAO ST ${(cfg.razao||"").split(" ")[0]} ${per.slice(5,7)}-${per.slice(0,4)}.xlsx`,new Blob([XLSX.write(wb,{bookType:"xlsx",type:"array"})]));
+}
+
 /* empresas */
 function renderEmpSel(){
   const el=$("#companyLine"); if(!el) return;
@@ -1304,7 +1571,7 @@ async function novaEmpresa(){ const id="empresa-"+Date.now().toString(36); empre
 
 $("#btnNovaEmp").addEventListener("click",novaEmpresa);
 /* boot */
-{const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-1);const el=$("#refPerImp");if(el)el.value=d.toISOString().slice(0,7);}
+{if(!/^\d{4}-\d{2}$/.test(apur)){const d=new Date();apur=shiftMes(d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"),-1);} $("#apurSel").value=apur; $("#apurAll").checked=apurTodas;}
 hist=lsGet("st_hist",{});
 renderCfg();
 sortNotes(); renderAll();
