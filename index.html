@@ -1124,11 +1124,14 @@ function vizinhoBA(ncm){
 function histBA(ncm){ const h=BASE_BA&&BASE_BA.historico&&BASE_BA.historico.ncm[ncm]; if(!h) return "";
   const m=x=>x.map(p=>p.slice(5)+"/"+p.slice(0,4)).join(", "); const mv=Object.keys(h.mva||{});
   return `Histórico do analista (05–08/2026): ${h.st.length?"ST em "+m(h.st)+(mv.length?" (MVA original "+mv.map(v=>pct(+v)).join(" / ")+")":""):""}${h.st.length&&h.trib.length?"; ":""}${h.trib.length?"tributado em "+m(h.trib):""}.` }
+function excBA(ncm,it){ const E=BASE_BA&&BASE_BA.excecoes; if(!E) return null; return E.find(e=>ncm.startsWith(e.ncm)&&new RegExp(e.re,"i").test(String(it.xProd||"")))||null }
+function descBA(ncm){ const R=BASE_BA&&BASE_BA.regrasDescricao; if(!R) return null; const k=Object.keys(R).filter(p=>ncm.startsWith(p)).sort((a,b)=>b.length-a.length)[0]; return k?R[k]:null }
 function classifyBA(it,n){
-  const ncm=onlyDigits(it.ncm), fund=[], conferir=[]; let tipo="parcial", origem="padrao";
+  const ncm=onlyDigits(it.ncm), fund=[], conferir=[]; let tipo="parcial", origem="padrao", c_mva=null;
   const rule=baRuleFor(it,n);
   const ncmUso=rule&&rule.ncmProprio?onlyDigits(rule.ncmProprio):ncm;
   if(rule&&rule.tipoBA){ tipo=rule.tipoBA==="st"?"st":"parcial"; origem="regra"; fund.push((rule.cProd?`Decisão por produto (cód. ${rule.cProd}${rule.ncmProprio?`, NCM próprio ${ncmFmt(ncmUso)}`:""})`:`Decisão cadastrada para o NCM ${ncmFmt(onlyDigits(rule.ncm))}`)+": "+(rule.fonte||(tipo==="st"?"sujeito à ST (antecipação total)":"tributado — antecipação parcial"))); if(!rule.validada) conferir.push("Regra ainda não validada.") }
+  else if(excBA(ncmUso,it)){ const e=excBA(ncmUso,it); tipo=e.tipo==="ST"?"st":"parcial"; origem="excecao"; fund.push(`NCM ${ncmFmt(ncmUso)} — ${e.texto}. Descrição na NF: "${String(it.xProd||"").slice(0,80)}".`) }
   else if(BASE_BA&&BASE_BA.decisoes[ncmUso]){ tipo=BASE_BA.decisoes[ncmUso]==="ST"?"st":"parcial"; origem="empresa"; const fo=BASE_BA.decisoesFonte&&BASE_BA.decisoesFonte[ncmUso]; fund.push(`NCM ${ncmFmt(ncmUso)} classificado como ${tipo==="st"?"ST (antecipação total)":"tributado (antecipação parcial)"} na base do sistema${fo?": "+fo:" (tabela de regras tributárias da empresa, consulta Econet)."}`); const hi=histBA(ncmUso); if(hi) fund.push(hi) }
   else { const a=baAnexo1(ncmUso), ev=evidenciaXMLBA(it), viz=vizinhoBA(ncmUso);
     if(ev){ tipo="st"; origem="xml"; fund.push(ev) }
@@ -1143,7 +1146,7 @@ function classifyBA(it,n){
         if(origem!=="regra") conferir.push(`Redução do Conv. 52/91 aplicada pelo NCM (Anexo ${cv.anexo==="a2"?"II":"I"}, item ${cv.item}) — o benefício depende da descrição do produto no Anexo.`) }
       else { carga=num(cfg.aliqPadrao)||(BASE_BA?BASE_BA.meta.aliqInternaPadrao:20.5); cargaRef=`Alíquota interna padrão de ${pct(carga)} (Lei 7.014/96, art. 15, I) — NCM sem redução de base no Conv. ICMS 52/91.` } }
     fund.push(cargaRef) }
-  return {tipo,origem,rule,ncmUso,carga,cargaRef,fund,conferir};
+  return {tipo,origem,rule,ncmUso,carga,cargaRef,fund,conferir,mvaDesc:c_mva};
 }
 function calcParcialBA(n,it){
   const ufO=n.emit.uf, ufD=n.dest.uf;
@@ -1165,6 +1168,8 @@ const BA_MVA_SEED=[["7318",55,"parafusos, porcas e arruelas"],["848140",45,"vál
 function mvaBA(c){
   if(c.rule&&num(c.rule.mva)>0) return {mva:num(c.rule.mva),ref:`MVA original ${pct(num(c.rule.mva))} definida na regra cadastrada${c.rule.fonte?" ("+c.rule.fonte.slice(0,120)+")":""}`,ok:true};
   const ncm=c.ncmUso;
+  if(BASE_BA&&BASE_BA.mvaEmpresa&&BASE_BA.mvaEmpresa[ncm]>0){ const m=BASE_BA.mvaEmpresa[ncm]; return {mva:m,ref:`MVA original ${pct(m)} — decisão validada pela equipe fiscal da empresa para o NCM ${ncmFmt(ncm)}.`,ok:true} }
+  if(c.mvaDesc) return {mva:c.mvaDesc.mva,ref:`MVA original ${pct(c.mvaDesc.mva)} — Anexo 1 do RICMS-BA (2026), item ${c.mvaDesc.item} (enquadramento pela descrição do produto).`,ok:true};
   const s1=BASE_BA&&BASE_BA.anexo1["1"]?BASE_BA.anexo1["1"].ncms.filter(p=>ncm.startsWith(p)).sort((x,y)=>y.length-x.length)[0]:null;
   if(s1) return {mva:71.78,ref:`MVA original 71,78% — peças e acessórios para veículos automotores, Anexo 1 do RICMS-BA, seg. 1 (Conv. ICMS 142/18, Anexo II; Prot. ICMS 41/08 e 97/10, "demais casos"), posição ${ncmFmt(s1)}.`,ok:true};
   if(BASE_BA&&BASE_BA.anexo1Mva){ const hits=BASE_BA.anexo1Mva.flatMap(([item,ns,m])=>ns.filter(p=>ncm.startsWith(p)).map(p=>({item,p,m}))); if(hits.length){ const L=Math.max(...hits.map(h=>h.p.length)), best=hits.filter(h=>h.p.length===L), ms=[...new Set(best.map(h=>h.m))];
@@ -1433,7 +1438,7 @@ function relData(per,raw){
   const sm={}; ok.forEach(x=>x.sr.forEach(r=>{const k=r.cls.ncmUso+"|"+r.st.mva; const g=(sm[k]=sm[k]||{ncm:r.cls.ncmUso,mva:r.st.mva,itens:0,bc:0,icms:0,ded:0,dif:0}); g.itens++; g.bc+=r.st.bc; g.icms+=r.st.icms; g.ded+=r.st.proprio+r.st.retido; g.dif+=r.st.raw}));
   return {per,notas,ok,tot,forn:Object.values(fm).sort((a,b)=>b.dif-a.dif),ncm:Object.values(nm).sort((a,b)=>b.dif-a.dif),ncmST:Object.values(sm).sort((a,b)=>b.dif-a.dif),guia:guiaDoMes(per),guiaST:hist[`BAST-${rootOf(cfg.cnpj)}-${per}`],venc:vencBA(per)};
 }
-const ORIG_LBL={regra:"decisão cadastrada",empresa:"base do sistema",anexo1:"Anexo 1",padrao:"padrão",xml:"evidência na NF-e (CST/CEST)",vizinho:"NCM semelhante na tabela da empresa",foraanexo:"fora do Anexo 1 (automático)"};
+const ORIG_LBL={regra:"decisão cadastrada",empresa:"base do sistema",anexo1:"Anexo 1",padrao:"padrão",xml:"evidência na NF-e (CST/CEST)",vizinho:"NCM semelhante na tabela da empresa",foraanexo:"fora do Anexo 1 (automático)",descricao:"pela descrição do produto",excecao:"exceção validada"};
 function daePill(h,v){return h?`<span class="pill ${h.status==="paga"?"ok":"acc"}">${h.status==="paga"?"pago":"emitido"}</span> <span class="mono faint" style="font-size:11px">${esc(h.controle||"")}</span>${h.valor!=null&&Math.abs(h.valor-v)>0.009?` <span class="pill warn">DAE R$ ${fmt(h.valor)} ≠ apuração</span>`:""}`:(v>0?'<span class="pill warn">a emitir</span>':"—")}
 function daeTxt(h,v){return h?(h.status==="paga"?"DAE pago":"DAE emitido")+(h.controle?" · "+esc(h.controle):""):(v>0?"DAE a emitir":"—")}
 function relSituacao(x){return x.pend?"fora do mês — aguardando validação":x.fora?`fora do mês (emitida ${apurLbl((x.n.dhEmi||"").slice(0,7))}) — validada${x.n.validMes&&x.n.validMes.por?" por "+x.n.validMes.por:""}${x.n.validMes?" em "+brDate(x.n.validMes.em):""}`:"no mês"}
